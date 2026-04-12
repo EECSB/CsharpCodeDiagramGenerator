@@ -1,0 +1,201 @@
+<div style="width: 20em; min-width: 15em; flex-shrink: 0;">
+    <label><strong>Project Files:</strong></label>
+
+    <div class="mb-2 mt-2 d-flex flex-wrap align-items-center" style="gap: 0.25em;">
+
+        <label class="btn btn-sm btn-secondary @(IsLoading ? "disabled" : "")" for="@(IsLoading ? "" : "zipUpload")" title="Upload C# Project Zip" style="margin-right: 4em;">
+            @if (IsLoading && LoadingMessage == "Extracting zip...")
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+            }
+
+            Upload Zip
+
+            <InputFile id="zipUpload" OnChange="OnZipUpload" accept=".zip" style="display:none;" disabled="@IsLoading" />
+        </label>
+
+        @if (FileEntries.Count > 0)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="SelectAllFiles">Select All</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="DeselectAllFiles">Deselect All</button>
+        }
+    </div>
+    @if (FileEntries.Count > 0)
+    {
+        <div style="height: calc(100vh - 16em); overflow-y: auto; border: 1px solid #ccc; padding: 0.5em; font-family: Consolas, monospace; font-size: 0.85em;">
+            @(RenderTree(BuildFileTree()))
+        </div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-center text-muted" style="height: calc(100vh - 16em); border: 1px solid #ccc; padding: 0.5em; font-size: 0.9em;">
+            <span>Upload a C# project zip</span>
+        </div>
+    }
+</div>
+
+@code {
+    private const long MaxZipSize = 2L * 1024 * 1024 * 1024; // 2GB
+
+    [Parameter] public List<ZipFileEntry> FileEntries { get; set; } = new();
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string LoadingMessage { get; set; } = string.Empty;
+    [Parameter] public EventCallback<List<ZipFileEntry>> FileEntriesChanged { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnZipUpload { get; set; }
+    [Parameter] public EventCallback OnSelectionChanged { get; set; }
+
+    private async Task SelectAllFiles()
+    {
+        foreach (var entry in FileEntries)
+            entry.IsSelected = true;
+        await OnSelectionChanged.InvokeAsync();
+    }
+
+    private async Task DeselectAllFiles()
+    {
+        foreach (var entry in FileEntries)
+            entry.IsSelected = false;
+        await OnSelectionChanged.InvokeAsync();
+    }
+
+    private async Task OnFileSelectionChanged(ZipFileEntry entry)
+    {
+        entry.IsSelected = !entry.IsSelected;
+        await OnSelectionChanged.InvokeAsync();
+    }
+
+    private async Task ToggleFolder(FileTreeNode folder)
+    {
+        var descendants = GetDescendantEntries(folder).ToList();
+        bool allSelected = descendants.All(e => e.IsSelected);
+        bool newState = !allSelected;
+
+        foreach (var entry in descendants)
+            entry.IsSelected = newState;
+
+        await OnSelectionChanged.InvokeAsync();
+    }
+
+    private IEnumerable<ZipFileEntry> GetDescendantEntries(FileTreeNode node)
+    {
+        if (!node.IsFolder && node.Entry != null)
+        {
+            yield return node.Entry;
+            yield break;
+        }
+
+        foreach (var child in node.Children.Values)
+        {
+            foreach (var entry in GetDescendantEntries(child))
+                yield return entry;
+        }
+    }
+
+    private FileTreeNode BuildFileTree()
+    {
+        var root = new FileTreeNode { Name = "", IsFolder = true };
+
+        foreach (var entry in FileEntries)
+        {
+            var parts = entry.FullPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var current = root;
+
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var part = parts[i];
+                bool isLast = i == parts.Length - 1;
+
+                if (!current.Children.TryGetValue(part, out var child))
+                {
+                    child = new FileTreeNode
+                    {
+                        Name = part,
+                        IsFolder = !isLast,
+                        Entry = isLast ? entry : null
+                    };
+                    current.Children[part] = child;
+                }
+
+                current = child;
+            }
+        }
+
+        return root;
+    }
+
+    private RenderFragment RenderTree(FileTreeNode node) => builder =>
+    {
+        var children = node.Children.Values
+            .OrderByDescending(c => c.IsFolder)
+            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var child in children)
+        {
+            if (child.IsFolder)
+            {
+                var folderNode = child;
+                var descendants = GetDescendantEntries(folderNode).ToList();
+                bool allSelected = descendants.Count > 0 && descendants.All(e => e.IsSelected);
+                bool someSelected = descendants.Any(e => e.IsSelected);
+
+                // Outer div for indentation
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "style", "padding-left: 1.2em;");
+
+                // Folder checkbox + name
+                builder.OpenElement(2, "div");
+                builder.AddAttribute(3, "class", "form-check");
+
+                builder.OpenElement(4, "input");
+                builder.AddAttribute(5, "type", "checkbox");
+                builder.AddAttribute(6, "class", "form-check-input");
+                builder.AddAttribute(7, "checked", allSelected);
+
+                if (someSelected && !allSelected)
+                    builder.AddAttribute(8, "style", "opacity: 0.5;");
+
+                builder.AddAttribute(9, "onchange", EventCallback.Factory.Create(this, () => ToggleFolder(folderNode)));
+                builder.CloseElement(); // input
+
+                builder.OpenElement(10, "label");
+                builder.AddAttribute(11, "class", "form-check-label fw-bold");
+                builder.AddContent(12, "\ud83d\udcc1 " + folderNode.Name);
+                builder.CloseElement(); // label
+
+                builder.CloseElement(); // div.form-check
+
+                // Render children recursively
+                builder.AddContent(13, RenderTree(folderNode));
+
+                builder.CloseElement(); // outer div
+            }
+            else if (child.Entry != null)
+            {
+                var fileEntry = child.Entry;
+
+                // Outer div for indentation
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "style", "padding-left: 1.2em;");
+
+                // Inner div for form-check layout
+                builder.OpenElement(2, "div");
+                builder.AddAttribute(3, "class", "form-check");
+
+                builder.OpenElement(4, "input");
+                builder.AddAttribute(5, "type", "checkbox");
+                builder.AddAttribute(6, "class", "form-check-input");
+                builder.AddAttribute(7, "checked", fileEntry.IsSelected);
+                builder.AddAttribute(8, "onchange", EventCallback.Factory.Create(this, () => OnFileSelectionChanged(fileEntry)));
+                builder.CloseElement(); // input
+
+                builder.OpenElement(9, "label");
+                builder.AddAttribute(10, "class", "form-check-label");
+                builder.AddContent(11, "\ud83d\udcc4 " + child.Name);
+                builder.CloseElement(); // label
+
+                builder.CloseElement(); // div.form-check
+                builder.CloseElement(); // outer div
+            }
+        }
+    };
+}

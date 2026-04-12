@@ -1,0 +1,325 @@
+﻿@page "/"
+
+@inject IJSRuntime jsRuntime;
+@implements IDisposable
+
+<PageTitle>C# Code Diagram Generator</PageTitle>
+
+<div style="padding: 0 6em; overflow: hidden;">
+    <!-- Loading overlay -->
+    @if (isLoading)
+    {
+        <div class="d-flex align-items-center alert alert-info mt-2 py-2">
+            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+            <span>@loadingMessage</span>
+        </div>
+    }
+
+    <!-- File Tree + Code Editor side by side -->
+    <div class="d-flex mt-2" style="gap: 1em;">
+
+        <!-- Project Files Panel -->
+        <FileTreePanel FileEntries="zipFileEntries" IsLoading="isLoading" LoadingMessage="@loadingMessage" OnZipUpload="onZipUpload" OnSelectionChanged="onSelectionChanged"/>
+
+        <!-- Code Editor -->
+        <div style="flex: 1; min-width: 0;">
+            <label for="csharpEditor"><strong>Source Code:</strong></label>
+            <div id="csharpEditor" class="mt-2" style="width: 100%; height: calc(100vh - 12em); border: 1px solid #ccc;"></div>
+        </div>
+    </div>
+
+    <br>
+
+    <!-- Code Diagram -->
+    <div class="mt-5 mb-4">
+        <div>
+            <h4><strong>Code Diagram</strong></h4>
+        </div>
+
+        <!-- Diagram controls -->
+        <div class="d-flex flex-wrap align-items-center mb-2" style="gap: 0.75em;">
+            <button class="btn btn-primary" @onclick="draw" disabled="@isLoading" title="Generate Diagram">
+                @if (isLoading && loadingMessage == "Generating diagram...")
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                }
+                Generate Diagram
+            </button>
+            @if (!string.IsNullOrEmpty(codeGraph))
+            {
+                <button class="btn btn-sm btn-outline-secondary" @onclick="resetView" title="Reset zoom and position">Reset View</button>
+            }
+
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="chkInterfaces" @bind="diagramSettings.ShowInterfaces" />
+                <label class="form-check-label" for="chkInterfaces">Show Interfaces</label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="chkMethodCalls" @bind="diagramSettings.ShowMethodCalls" />
+                <label class="form-check-label" for="chkMethodCalls">Show Method Calls</label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="chkVariables" @bind="diagramSettings.ShowVariables" />
+                <label class="form-check-label" for="chkVariables">Show Variables</label>
+            </div>
+
+        </div>
+
+        <hr>
+
+        <div id="diagramViewport" style="width: 100%; height: calc(100vh - 12em); overflow: hidden; border: 1px solid #ccc; position: relative; cursor: grab; background: #fafafa;">
+            <div id="diagramContent" style="position: absolute; top: 0; left: 0; transform-origin: 0 0;">
+                @((MarkupString)codeGraph)
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    #region Variables
+
+    private const long MaxZipSize = 2L * 1024 * 1024 * 1024; // 2GB
+
+    private string sourceCode = @"
+                using System;
+                using MyNamespace;
+
+                public class Program
+                {
+                    public static void Main()
+                    {
+                        MyClass inst1 = new MyClass();
+                        inst1.MyMethod();
+
+                        MyClass inst2 = new MyClass2();
+                        inst2.MyMethod3();
+                    }
+                }
+
+                namespace MyNamespace
+                {
+                    public class MyClass
+                    {
+                        public void MyMethod()
+                        {
+                            Console.WriteLine(""Hello, World!"");
+                            MyMethod2();
+                        }
+
+                        public void MyMethod2()
+                        {
+                            Console.WriteLine(""Hello, World2!"");
+                        }
+                    }
+
+                    public class MyClass2
+                    {
+                        public void MyMethod3()
+                        {
+                            Console.WriteLine(""Hello, World!"");
+                            MyMethod2();
+                        }
+
+                        public void MyMethod4()
+                        {
+                            Console.WriteLine(""Hello, World2!"");
+                        }
+                    }
+                }";
+
+    private string codeGraph = string.Empty;
+    private string cytoscapeJson = string.Empty;
+
+    private DiagramGenerator.DiagramSettings diagramSettings = new();
+
+    private bool isLoading;
+    private string loadingMessage = string.Empty;
+
+    private List<ZipFileEntry> zipFileEntries = new();
+
+    private DiagramRenderMode renderModeSetting = DiagramRenderMode.VizGraph;
+
+    #endregion
+
+
+    #region Initialization
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await jsRuntime.InvokeVoidAsync("InitializeMonaco", "csharpEditor", sourceCode);
+        }
+    }
+
+    #endregion
+
+    public enum DiagramRenderMode
+    {
+        VizGraph,
+        Interactive2D,
+        Interactive3D
+    }
+
+
+
+    #region Methods
+
+    private async Task draw()
+    {
+        isLoading = true;
+        loadingMessage = "Generating diagram...";
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            sourceCode = await jsRuntime.InvokeAsync<string>("GetMonacoContent");
+
+            if (renderModeSetting == DiagramRenderMode.VizGraph)
+            {
+                string dot = DiagramGenerator.GenerateCodeDiagram(sourceCode, diagramSettings);
+                codeGraph = await jsRuntime.InvokeAsync<string>("renderDotToSvg", dot);
+
+                StateHasChanged();
+                await Task.Yield();
+                await jsRuntime.InvokeVoidAsync("initDiagramPanZoom");
+            }
+            else if (renderModeSetting == DiagramRenderMode.Interactive2D)
+            {
+                cytoscapeJson = DiagramGenerator.GenerateCytoscapeJson(sourceCode, diagramSettings);
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            loadingMessage = string.Empty;
+        }
+    }
+
+    private async Task resetView()
+    {
+        await jsRuntime.InvokeVoidAsync("resetDiagramView");
+    }
+
+    private async Task onZipUpload(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null)
+            return;
+
+        if (file.Size > MaxZipSize)
+        {
+            await jsRuntime.InvokeVoidAsync("alert", "File is too large. Maximum allowed size is 2GB.");
+            return;
+        }
+
+        isLoading = true;
+        loadingMessage = "Extracting zip...";
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: MaxZipSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            zipFileEntries.Clear();
+
+            using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read, leaveOpen: false))
+            {
+                var csEntries = new List<(string FullName, string Name, string Content, bool IsIgnored)>();
+                var razorEntries = new List<(string FullName, string Name, string Content, bool IsIgnored)>();
+
+                foreach (var entry in archive.Entries)
+                {
+                    if (entry.FullName.EndsWith("/"))
+                        continue;
+
+                    var normalizedPath = entry.FullName.Replace('\\', '/');
+                    bool isIgnoredFolder = normalizedPath.Split('/').Any(segment =>
+                        segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                        segment.Equals("obj", StringComparison.OrdinalIgnoreCase));
+
+                    bool isCsFile = entry.FullName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+                    bool isRazorFile = entry.FullName.EndsWith(".razor", StringComparison.OrdinalIgnoreCase);
+
+                    if (!isCsFile && !isRazorFile)
+                        continue;
+
+                    using var entryStream = entry.Open();
+                    using var reader = new StreamReader(entryStream);
+                    var rawContent = await reader.ReadToEndAsync();
+
+                    if (string.IsNullOrWhiteSpace(rawContent))
+                        continue;
+
+                    var item = (entry.FullName, entry.Name, Content: rawContent, IsIgnored: isIgnoredFolder);
+
+                    if (isCsFile)
+                        csEntries.Add(item);
+                    else
+                        razorEntries.Add(item);
+                }
+
+                // Pass 1: Add .cs files and collect existing class names
+                var allCsCode = string.Concat(csEntries.Select(e => e.Content));
+                var existingClassNames = DiagramGenerator.CollectClassNames(allCsCode);
+
+                foreach (var cs in csEntries)
+                {
+                    zipFileEntries.Add(new ZipFileEntry
+                    {
+                        FullPath = cs.FullName,
+                        Content = cs.Content,
+                        IsSelected = !cs.IsIgnored
+                    });
+                }
+
+                // Pass 2: Add .razor files with markup-referenced members as stubs
+                foreach (var razor in razorEntries)
+                {
+                    var content = DiagramGenerator.ExtractRazorCodeBlocks(razor.Content, razor.Name, existingClassNames);
+
+                    if (string.IsNullOrWhiteSpace(content))
+                        continue;
+
+                    zipFileEntries.Add(new ZipFileEntry
+                    {
+                        FullPath = razor.FullName,
+                        Content = content,
+                        IsSelected = !razor.IsIgnored
+                    });
+                }
+            }
+
+            await rebuildSourceFromSelection();
+        }
+        finally
+        {
+            isLoading = false;
+            loadingMessage = string.Empty;
+        }
+    }
+
+    private async Task onSelectionChanged()
+    {
+        await rebuildSourceFromSelection();
+    }
+
+    private async Task rebuildSourceFromSelection()
+    {
+        sourceCode = string.Concat(zipFileEntries.Where(f => f.IsSelected).Select(f => f.Content));
+        await jsRuntime.InvokeVoidAsync("SetMonacoContent", sourceCode);
+    }
+
+    public void Dispose()
+    {
+        _ = jsRuntime.InvokeVoidAsync("DisposeMonaco");
+    }
+
+    #endregion
+}

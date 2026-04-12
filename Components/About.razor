@@ -1,0 +1,41 @@
+﻿@if (show)
+{
+    <div class="popupDiv popupZIndex_1">
+        <div class="col">
+            <div class="row mb-4">
+                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
+                    About
+                </div>
+
+                <div class="col d-flex justify-content-end">
+                    <button style="padding: 3px 10px; height: fit-content; background-color: #f25958; color: white; border: none;" @onclick="() => { Show = !Show; }">X</button>
+                </div>
+            </div>
+
+            <div class="row">
+                <p>
+                    I wanted to get a diagram of some C# code I was working on. Visual studio offers this as a feature called <a href="https://learn.microsoft.com/en-us/visualstudio/modeling/map-dependencies-across-your-solutions?view=visualstudio" target="_blank" rel="noopener noreferrer">Code Map</a> but it's <a href="https://learn.microsoft.com/en-us/visualstudio/modeling/analyze-and-model-your-architecture?view=visualstudio#VersionSupport" target="_blank" rel="noopener noreferrer">only available</a> for enterprise edition of visual studio.
+                    So I quickly cobbled together this project by reusing some code from other projects I made and "vibe coded" the rest with AI(so I don't guarantee code quality or that it's without bugs).
+                </p>
+                <p>
+                    Developed by <a href="https://eecs.blog" target="_blank" rel="noopener noreferrer">The EECS Blog</a>, project <a href="https://github.com/EECSB/CsharpCodeDiagramGenerator" target="_blank" rel="noopener noreferrer">Github repository</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private bool show = false;
+    [Parameter]
+    public bool Show
+    {
+        get { return show; }
+        set 
+        { 
+            show = value; 
+            StateHasChanged(); 
+        }
+    }
+}
