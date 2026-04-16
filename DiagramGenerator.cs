@@ -13,6 +13,7 @@ namespace CSharpCodeGraph
             public bool ShowInterfaces { get; set; } = true;
             public bool ShowMethodCalls { get; set; } = true;
             public bool ShowVariables { get; set; } = true;
+            public bool OnlyShowMyCode { get; set; } = true;
         }
 
         #region Entry Points
@@ -58,7 +59,7 @@ namespace CSharpCodeGraph
 
                 if (settings.ShowMethodCalls)
                 {
-                    AddMethodCalls(type, sb, knownTypeNames);
+                    AddMethodCalls(type, sb, knownTypeNames, settings);
                 }
             }
 
@@ -349,6 +350,10 @@ namespace CSharpCodeGraph
 
                 // Check if it's a known type in the diagram
                 var matchingKnown = knownTypeNames.FirstOrDefault(k => k.EndsWith("." + baseTypeName) || k == baseTypeName);
+
+                if (settings.OnlyShowMyCode && matchingKnown == null)
+                    continue;
+
                 var targetName = matchingKnown ?? baseTypeName;
 
                 if (type is InterfaceDeclarationSyntax || baseType.Type is GenericNameSyntax)
@@ -416,9 +421,27 @@ namespace CSharpCodeGraph
         }
 
         // ---------- METHOD CALLS ----------
-        private static void AddMethodCalls(TypeDeclarationSyntax type, StringBuilder sb, HashSet<string> knownTypeNames)
+        private static void AddMethodCalls(TypeDeclarationSyntax type, StringBuilder sb, HashSet<string> knownTypeNames, DiagramSettings settings)
         {
             var fullName = GetFullName(type);
+
+            // Build a set of method names that exist in known types
+            var knownMethods = new Dictionary<string, List<string>>();
+            if (settings.OnlyShowMyCode)
+            {
+                var root = type.SyntaxTree.GetCompilationUnitRoot();
+                foreach (var t in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+                {
+                    var tFullName = GetFullName(t);
+                    if (!knownTypeNames.Contains(tFullName)) continue;
+                    foreach (var m in t.Members.OfType<MethodDeclarationSyntax>())
+                    {
+                        if (!knownMethods.ContainsKey(m.Identifier.Text))
+                            knownMethods[m.Identifier.Text] = new List<string>();
+                        knownMethods[m.Identifier.Text].Add(tFullName);
+                    }
+                }
+            }
 
             foreach (var method in type.Members.OfType<MethodDeclarationSyntax>())
             {
@@ -441,18 +464,37 @@ namespace CSharpCodeGraph
                     if (calledMethodName == null)
                         continue;
 
-                    // Look for the called method in any known type
-                    foreach (var knownTypeName in knownTypeNames)
+                    if (settings.OnlyShowMyCode)
                     {
-                        var edgeKey = $"{fullName}.{callerName}->{knownTypeName}.{calledMethodName}";
-                        if (visitedCalls.Contains(edgeKey))
-                            continue;
+                        // Only show calls to methods defined in known types
+                        if (knownMethods.TryGetValue(calledMethodName, out var owners))
+                        {
+                            foreach (var ownerFullName in owners)
+                            {
+                                var edgeKey = $"{fullName}.{callerName}->{ownerFullName}.{calledMethodName}";
+                                if (!visitedCalls.Add(edgeKey)) continue;
 
-                        visitedCalls.Add(edgeKey);
+                                sb.AppendLine(
+                                    $"\"{fullName}\" -> \"{ownerFullName}\" [style=dotted, label=\"{callerName}() -> {calledMethodName}()\"];"
+                                );
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Look for the called method in any known type
+                        foreach (var knownTypeName in knownTypeNames)
+                        {
+                            var edgeKey = $"{fullName}.{callerName}->{knownTypeName}.{calledMethodName}";
+                            if (visitedCalls.Contains(edgeKey))
+                                continue;
 
-                        sb.AppendLine(
-                            $"\"{fullName}\" -> \"{knownTypeName}\" [style=dotted, label=\"{callerName}() -> {calledMethodName}()\"];"
-                        );
+                            visitedCalls.Add(edgeKey);
+
+                            sb.AppendLine(
+                                $"\"{fullName}\" -> \"{knownTypeName}\" [style=dotted, label=\"{callerName}() -> {calledMethodName}()\"];"
+                            );
+                        }
                     }
                 }
             }
@@ -520,7 +562,7 @@ namespace CSharpCodeGraph
                     {
                         var memberId = $"{fullName}.{prop.Identifier.Text}";
                         var memberLabel = $"{prop.Type} {prop.Identifier.Text}";
-                        nodes.Add($"{{ \"data\": {{ \"id\": \"{Escape(memberId)}\", \"label\": \"{Escape(memberLabel)}\", \"parent\": \"{fullName}\", \"nodeType\": \"property\", \"memberKind\": \"property\" }} }}");
+                        nodes.Add($"{{ \"data\": {{ \"id\": \"{Escape(memberId)}\", \"label\": \"{Escape(memberLabel)}\", \"parent\": \"{fullName}\", \"nodeType\": \"property\", \"memberKind`: \"property\" }} }}");
                     }
 
                     foreach (var field in type.Members.OfType<FieldDeclarationSyntax>())
@@ -555,6 +597,10 @@ namespace CSharpCodeGraph
                 {
                     var baseTypeName = baseType.Type.ToString();
                     var matchingKnown = knownTypeNames.FirstOrDefault(k => k.EndsWith("." + baseTypeName) || k == baseTypeName);
+
+                    if (settings.OnlyShowMyCode && matchingKnown == null)
+                        continue;
+
                     var targetName = matchingKnown ?? baseTypeName;
 
                     if (type is InterfaceDeclarationSyntax || baseType.Type is GenericNameSyntax)
