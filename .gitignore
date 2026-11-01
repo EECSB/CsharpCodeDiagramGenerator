@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Built from NpmJS by npm and webpack during dotnet build (see CSharpCodeGraph.csproj)
+wwwroot/js/webpack-bundle/

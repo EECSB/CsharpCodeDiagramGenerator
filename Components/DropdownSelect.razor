@@ -1,0 +1,131 @@
+@* Picks one of a few options, like a <select>, but the button and the options show icons and the options a short description.
+   Keyboard: arrow keys open it and move through the options, Enter picks one, Escape closes it. *@
+<div class="dropdown-select">
+    <button type="button" class="dropdown-button @(isOpen ? "open" : "")" @ref="button" @onclick="toggle" @onkeydown="onButtonKeyDown"
+            aria-haspopup="listbox" aria-expanded="@(isOpen ? "true" : "false")" aria-label="@($"{Label}: {Selected?.Text}")" title="@Title">
+        @if (Selected != null)
+        {
+            <Icon Name="@Selected.Icon" Class="dropdown-icon" />
+            <span>@Selected.Text</span>
+        }
+        <Icon Name="chevron-down" Size="14" Class="dropdown-chevron" />
+    </button>
+
+    @if (isOpen)
+    {
+        <div class="menu-backdrop" @onclick="() => close()"></div>
+        <div class="menu" role="listbox" aria-label="@Label" @onkeydown="onMenuKeyDown">
+            @for (int i = 0; i < Options.Count; i++)
+            {
+                var index = i;
+                var option = Options[i];
+                bool isSelected = option.Value == Value;
+                <button type="button" role="option" aria-selected="@isSelected" class="@(isSelected ? "selected" : "")"
+                        @ref="optionButtons[index]" @onfocus="() => activeIndex = index" @onclick="() => chooseAsync(option)">
+                    <Icon Name="@option.Icon" />
+                    <span class="menu-label">@option.Text<small>@option.Description</small></span>
+                    @if (isSelected)
+                    {
+                        <Icon Name="check" Class="menu-check" />
+                    }
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    public sealed record Option(string Value, string Text, string Icon, string? Description = null);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Option> Options { get; set; } = [];
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Title { get; set; }
+
+    private Option? Selected => Options.FirstOrDefault(o => o.Value == Value);
+
+    private ElementReference button;
+    private ElementReference[] optionButtons = [];
+    private bool isOpen;
+    private int activeIndex;
+    private int? focusIndex; // the option to focus after the next render
+    private bool focusButton;
+
+    protected override void OnParametersSet()
+    {
+        if (optionButtons.Length != Options.Count)
+            optionButtons = new ElementReference[Options.Count];
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusIndex is int index)
+        {
+            focusIndex = null;
+            await optionButtons[index].FocusAsync();
+        }
+        else if (focusButton)
+        {
+            focusButton = false;
+            await button.FocusAsync();
+        }
+    }
+
+    private void toggle()
+    {
+        if (isOpen)
+            close();
+        else
+            open();
+    }
+
+    private void open()
+    {
+        isOpen = true;
+        // Start on the current option, so Enter keeps it and the arrows move on from it.
+        int current = Options.ToList().FindIndex(o => o.Value == Value);
+        moveFocus(Math.Max(current, 0));
+    }
+
+    private void close(bool refocusButton = false)
+    {
+        isOpen = false;
+        focusButton = refocusButton;
+    }
+
+    private void moveFocus(int index)
+    {
+        if (Options.Count == 0)
+            return;
+
+        activeIndex = Math.Clamp(index, 0, Options.Count - 1);
+        focusIndex = activeIndex;
+    }
+
+    private void onButtonKeyDown(KeyboardEventArgs e)
+    {
+        if (!isOpen && e.Key is "ArrowDown" or "ArrowUp")
+            open();
+    }
+
+    private void onMenuKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Escape": close(refocusButton: true); break;
+            case "Tab": close(); break;
+            case "ArrowDown": moveFocus(activeIndex + 1); break;
+            case "ArrowUp": moveFocus(activeIndex - 1); break;
+            case "Home": moveFocus(0); break;
+            case "End": moveFocus(Options.Count - 1); break;
+        }
+    }
+
+    private async Task chooseAsync(Option option)
+    {
+        close(refocusButton: true);
+        if (option.Value != Value)
+            await ValueChanged.InvokeAsync(option.Value);
+    }
+}

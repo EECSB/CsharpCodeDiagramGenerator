@@ -1,48 +1,244 @@
-<div style="width: 20em; min-width: 15em; flex-shrink: 0;">
-    <label><strong>Project Files:</strong></label>
+@{
+    // A public GitHub repository instead of an archive: its address, e.g. https://github.com/owner/repository.
+    RenderFragment gitHubForm = @<form class="github-form" @onsubmit="submitGitHubUrl">
+        <input type="text" class="form-control form-control-sm" placeholder="GitHub repository URL" aria-label="GitHub repository URL"
+               @bind="gitHubUrl" @bind:event="oninput" disabled="@IsLoading" spellcheck="false" />
+        <button type="submit" class="btn btn-sm btn-cta" disabled="@(IsLoading || string.IsNullOrWhiteSpace(gitHubUrl))"
+                title="Load the repository" aria-label="Load the repository">
+            <Icon Name="download" Size="15" />
+        </button>
+    </form>;
+}
 
-    <div class="mb-2 mt-2 d-flex flex-wrap align-items-center" style="gap: 0.25em;">
-
-        <label class="btn btn-sm btn-secondary @(IsLoading ? "disabled" : "")" for="@(IsLoading ? "" : "zipUpload")" title="Upload C# Project Zip" style="margin-right: 4em;">
-            @if (IsLoading && LoadingMessage == "Extracting zip...")
-            {
-                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-            }
-
-            Upload Zip
-
-            <InputFile id="zipUpload" OnChange="OnZipUpload" accept=".zip" style="display:none;" disabled="@IsLoading" />
-        </label>
-
+<div class="file-panel" @ondragenter="onPanelDragEnter">
+    <div class="file-panel-header">
+        <Icon Name="folder-tree" Class="file-panel-icon" />
+        <span class="file-panel-title">Project</span>
         @if (FileEntries.Count > 0)
         {
-            <button class="btn btn-sm btn-outline-secondary" @onclick="SelectAllFiles">Select All</button>
-            <button class="btn btn-sm btn-outline-secondary" @onclick="DeselectAllFiles">Deselect All</button>
+            <span class="file-panel-count">@FileEntries.Count(e => e.IsSelected) of @FileEntries.Count files</span>
         }
+        <button class="icon-button" @onclick="OnClose" title="Hide the project files" aria-label="Hide the project files">
+            <Icon Name="panel-left-close" />
+        </button>
     </div>
+
+    @* Each drop area has an invisible file input over all of it: an archive can be dropped on it, or picked with a click.
+       No accept filter: Windows shows .zip files like folders, and a filter can make them hard to find.
+       The page checks the file type instead (ProjectArchive.IsSupported). *@
     @if (FileEntries.Count > 0)
     {
-        <div style="height: calc(100vh - 16em); overflow-y: auto; border: 1px solid #ccc; padding: 0.5em; font-family: Consolas, monospace; font-size: 0.85em;">
-            @(RenderTree(BuildFileTree()))
+        <div class="file-panel-actions">
+            <span>Include</span>
+            <button class="btn btn-link btn-sm p-0" @onclick="SelectAllFiles">all</button>
+            <button class="btn btn-link btn-sm p-0" @onclick="DeselectAllFiles">none</button>
         </div>
+
+        <div class="file-tree">
+            @foreach (var child in SortedChildren(tree))
+            {
+                @RenderNode(child)
+            }
+        </div>
+
+        @* Loading a different project, below the tree: the files come first once there are some. *@
+        <div class="replace-project">
+            <div class="drop-strip @(IsLoading ? "busy" : "")">
+                @if (IsLoading)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span>@LoadingMessage</span>
+                }
+                else
+                {
+                    <Icon Name="upload" />
+                    <span>Drop another archive or <u>click</u> to replace</span>
+                }
+                <InputFile OnChange="OnArchiveUpload" class="drop-input" disabled="@IsLoading" title="Load a different project (.zip, .7z, .rar, .tar.gz)" />
+            </div>
+            @gitHubForm
+        </div>
+
+        @if (isDraggingOver)
+        {
+            @* While a file is dragged over the panel, the whole panel takes the drop. *@
+            <div class="drop-overlay" @ondragleave="onDragLeave" @ondrop="onDrop">
+                <div class="drop-overlay-message">
+                    @if (IsLoading)
+                    {
+                        <span class="spinner-border" role="status" aria-hidden="true"></span>
+                        <span>@LoadingMessage</span>
+                    }
+                    else
+                    {
+                        <Icon Name="upload" Size="30" />
+                        <span>Drop the archive to replace the project</span>
+                    }
+                </div>
+                <InputFile OnChange="OnArchiveUpload" class="drop-input" disabled="@IsLoading" />
+            </div>
+        }
     }
     else
     {
-        <div class="d-flex align-items-center justify-content-center text-muted" style="height: calc(100vh - 16em); border: 1px solid #ccc; padding: 0.5em; font-size: 0.9em;">
-            <span>Upload a C# project zip</span>
+        <p class="file-panel-note paste-note">Paste <span class="accent">code</span> into the <span class="accent">editor</span>,</p>
+        <p class="file-panel-note">or load a public GitHub repository:</p>
+        @gitHubForm
+        <p class="file-panel-note">or drop a project archive below.</p>
+        <div class="drop-zone @(isDraggingOver ? "dragging" : "") @(IsLoading ? "busy" : "")"
+             @ondragenter="() => isDraggingOver = true" @ondragleave="onDragLeave" @ondrop="onDrop">
+            <div class="drop-zone-icon">
+                @if (IsLoading)
+                {
+                    <span class="spinner-border" role="status" aria-hidden="true"></span>
+                }
+                else
+                {
+                    <Icon Name="upload" Size="28" />
+                }
+            </div>
+            @if (IsLoading)
+            {
+                <span class="drop-zone-title">@LoadingMessage</span>
+            }
+            else
+            {
+                <span class="drop-zone-title">@(isDraggingOver ? "Drop it here" : "Drag a project archive here")</span>
+                <span class="drop-zone-hint">or <u>click to browse</u> for one</span>
+                <span class="drop-zone-formats">
+                    <span>.zip</span><span>.7z</span><span>.rar</span><span>.tar.gz</span>
+                </span>
+            }
+            <span class="drop-zone-note">Only the @ProjectArchive.SourceFileTypes files in it are read, in your browser. Nothing is uploaded anywhere.</span>
+            <InputFile OnChange="OnArchiveUpload" class="drop-input" disabled="@IsLoading" title="Choose a project archive (.zip, .7z, .rar, .tar.gz)" />
         </div>
     }
 </div>
 
 @code {
-    private const long MaxZipSize = 2L * 1024 * 1024 * 1024; // 2GB
-
-    [Parameter] public List<ZipFileEntry> FileEntries { get; set; } = new();
+    [Parameter] public List<ProjectFileEntry> FileEntries { get; set; } = new();
     [Parameter] public bool IsLoading { get; set; }
-    [Parameter] public string LoadingMessage { get; set; } = string.Empty;
-    [Parameter] public EventCallback<List<ZipFileEntry>> FileEntriesChanged { get; set; }
-    [Parameter] public EventCallback<InputFileChangeEventArgs> OnZipUpload { get; set; }
+    [Parameter] public string LoadingMessage { get; set; } = "Reading the archive...";
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnArchiveUpload { get; set; }
+    [Parameter] public EventCallback<string> OnGitHubLoad { get; set; }
     [Parameter] public EventCallback OnSelectionChanged { get; set; }
+    [Parameter] public EventCallback<string> OnFileClicked { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool isDraggingOver;
+    // Filled in with this app's own repository, as an example: Load shows the app analyzing itself.
+    private string gitHubUrl = "https://github.com/EECSB/CsharpCodeDiagramGenerator";
+    private bool wasLoading;
+    private FileTreeNode tree = new() { IsFolder = true };
+    private List<ProjectFileEntry>? treeSource;
+    private readonly HashSet<string> expandedFolders = new(StringComparer.Ordinal);
+
+    // Per render: how many files below each folder are selected.
+    private readonly Dictionary<FileTreeNode, (int Selected, int Total)> folderCounts = new();
+
+    protected override void OnParametersSet()
+    {
+        // A dropped archive has been read: the drop overlay (and its file input) can go now.
+        if (wasLoading && !IsLoading)
+            isDraggingOver = false;
+        wasLoading = IsLoading;
+
+        // The page hands over a new list for every upload, so the tree is only rebuilt then.
+        if (!ReferenceEquals(treeSource, FileEntries))
+        {
+            treeSource = FileEntries;
+            tree = BuildFileTree();
+            expandedFolders.Clear();
+            ExpandByDefault(tree, depth: 0);
+        }
+
+        folderCounts.Clear();
+        CountSelected(tree);
+    }
+
+    private RenderFragment RenderNode(FileTreeNode node) => @<div class="tree-item" @key="node.Path">
+        @if (node.IsFolder)
+        {
+            var (selected, total) = folderCounts[node];
+            bool expanded = expandedFolders.Contains(node.Path);
+
+            <div class="tree-row">
+                <button class="tree-toggle" @onclick="() => ToggleExpanded(node)" aria-expanded="@(expanded ? "true" : "false")" title="@(expanded ? "Collapse" : "Expand")">
+                    <Icon Name="@(expanded ? "chevron-down" : "chevron-right")" Size="14" />
+                </button>
+                <input type="checkbox" class="form-check-input @(selected > 0 && selected < total ? "partial" : "")"
+                       checked="@(selected == total)" @onchange="() => ToggleFolder(node)" aria-label="@($"Select folder {node.Name}")" />
+                <span class="tree-name folder-name" @onclick="() => ToggleExpanded(node)">
+                    <Icon Name="@(expanded ? "folder-open" : "folder")" Size="15" Class="folder-icon" />
+                    <span>@node.Name</span>
+                </span>
+            </div>
+
+            @if (expanded)
+            {
+                <div class="tree-children">
+                    @foreach (var child in SortedChildren(node))
+                    {
+                        @RenderNode(child)
+                    }
+                </div>
+            }
+        }
+        else if (node.Entry != null)
+        {
+            var entry = node.Entry;
+            <div class="tree-row">
+                <span class="tree-toggle-spacer"></span>
+                <input type="checkbox" class="form-check-input" checked="@entry.IsSelected" @onchange="() => OnFileSelectionChanged(entry)" aria-label="@($"Select {node.Name}")" />
+                <span class="tree-name file-name @(entry.IsSelected ? "" : "unselected")" @onclick="() => showFileAsync(entry)"
+                      title="@(entry.IsSelected ? "Show in editor" : "Not in the editor: tick it to include it")">
+                    <Icon Name="file-code" Size="15" Class="file-icon" />
+                    <span>@node.Name</span>
+                </span>
+            </div>
+        }
+    </div>;
+
+    private async Task showFileAsync(ProjectFileEntry entry)
+    {
+        // An unticked file isn't in the editor, so there's nothing to show.
+        if (entry.IsSelected)
+            await OnFileClicked.InvokeAsync(entry.FullPath);
+    }
+
+    private async Task submitGitHubUrl()
+    {
+        if (!IsLoading && !string.IsNullOrWhiteSpace(gitHubUrl))
+            await OnGitHubLoad.InvokeAsync(gitHubUrl.Trim());
+    }
+
+    // ---------- DRAG & DROP ----------
+    private void onPanelDragEnter()
+    {
+        // With a project loaded, dragging a file anywhere over the panel shows the drop overlay.
+        if (FileEntries.Count > 0 && !IsLoading)
+            isDraggingOver = true;
+    }
+
+    private void onDragLeave()
+    {
+        if (!IsLoading)
+            isDraggingOver = false;
+    }
+
+    // The drop event comes before the file input reports the dropped file, so the input has to stay
+    // a moment; once the archive is being read, the overlay stays until it's done (OnParametersSet).
+    private async Task onDrop()
+    {
+        await Task.Delay(500);
+        if (!IsLoading)
+            isDraggingOver = false;
+    }
+
+    private static IEnumerable<FileTreeNode> SortedChildren(FileTreeNode node) =>
+        node.Children.Values
+            .OrderByDescending(c => c.IsFolder)
+            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
 
     private async Task SelectAllFiles()
     {
@@ -58,7 +254,7 @@
         await OnSelectionChanged.InvokeAsync();
     }
 
-    private async Task OnFileSelectionChanged(ZipFileEntry entry)
+    private async Task OnFileSelectionChanged(ProjectFileEntry entry)
     {
         entry.IsSelected = !entry.IsSelected;
         await OnSelectionChanged.InvokeAsync();
@@ -67,8 +263,7 @@
     private async Task ToggleFolder(FileTreeNode folder)
     {
         var descendants = GetDescendantEntries(folder).ToList();
-        bool allSelected = descendants.All(e => e.IsSelected);
-        bool newState = !allSelected;
+        bool newState = !descendants.All(e => e.IsSelected);
 
         foreach (var entry in descendants)
             entry.IsSelected = newState;
@@ -76,7 +271,13 @@
         await OnSelectionChanged.InvokeAsync();
     }
 
-    private IEnumerable<ZipFileEntry> GetDescendantEntries(FileTreeNode node)
+    private void ToggleExpanded(FileTreeNode folder)
+    {
+        if (!expandedFolders.Remove(folder.Path))
+            expandedFolders.Add(folder.Path);
+    }
+
+    private IEnumerable<ProjectFileEntry> GetDescendantEntries(FileTreeNode node)
     {
         if (!node.IsFolder && node.Entry != null)
         {
@@ -88,6 +289,37 @@
         {
             foreach (var entry in GetDescendantEntries(child))
                 yield return entry;
+        }
+    }
+
+    private (int Selected, int Total) CountSelected(FileTreeNode node)
+    {
+        if (!node.IsFolder)
+            return (node.Entry?.IsSelected == true ? 1 : 0, 1);
+
+        int selected = 0, total = 0;
+        foreach (var child in node.Children.Values)
+        {
+            var (s, t) = CountSelected(child);
+            selected += s;
+            total += t;
+        }
+
+        folderCounts[node] = (selected, total);
+        return (selected, total);
+    }
+
+    // The first two folder levels are open, except folders whose files all start unticked: build output and
+    // libraries (the page decides which those are).
+    private void ExpandByDefault(FileTreeNode node, int depth)
+    {
+        foreach (var child in node.Children.Values.Where(c => c.IsFolder))
+        {
+            if (depth < 2 && GetDescendantEntries(child).Any(e => e.IsSelected))
+            {
+                expandedFolders.Add(child.Path);
+                ExpandByDefault(child, depth + 1);
+            }
         }
     }
 
@@ -110,6 +342,7 @@
                     child = new FileTreeNode
                     {
                         Name = part,
+                        Path = string.Join("/", parts.Take(i + 1)),
                         IsFolder = !isLast,
                         Entry = isLast ? entry : null
                     };
@@ -122,80 +355,4 @@
 
         return root;
     }
-
-    private RenderFragment RenderTree(FileTreeNode node) => builder =>
-    {
-        var children = node.Children.Values
-            .OrderByDescending(c => c.IsFolder)
-            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var child in children)
-        {
-            if (child.IsFolder)
-            {
-                var folderNode = child;
-                var descendants = GetDescendantEntries(folderNode).ToList();
-                bool allSelected = descendants.Count > 0 && descendants.All(e => e.IsSelected);
-                bool someSelected = descendants.Any(e => e.IsSelected);
-
-                // Outer div for indentation
-                builder.OpenElement(0, "div");
-                builder.AddAttribute(1, "style", "padding-left: 1.2em;");
-
-                // Folder checkbox + name
-                builder.OpenElement(2, "div");
-                builder.AddAttribute(3, "class", "form-check");
-
-                builder.OpenElement(4, "input");
-                builder.AddAttribute(5, "type", "checkbox");
-                builder.AddAttribute(6, "class", "form-check-input");
-                builder.AddAttribute(7, "checked", allSelected);
-
-                if (someSelected && !allSelected)
-                    builder.AddAttribute(8, "style", "opacity: 0.5;");
-
-                builder.AddAttribute(9, "onchange", EventCallback.Factory.Create(this, () => ToggleFolder(folderNode)));
-                builder.CloseElement(); // input
-
-                builder.OpenElement(10, "label");
-                builder.AddAttribute(11, "class", "form-check-label fw-bold");
-                builder.AddContent(12, "\ud83d\udcc1 " + folderNode.Name);
-                builder.CloseElement(); // label
-
-                builder.CloseElement(); // div.form-check
-
-                // Render children recursively
-                builder.AddContent(13, RenderTree(folderNode));
-
-                builder.CloseElement(); // outer div
-            }
-            else if (child.Entry != null)
-            {
-                var fileEntry = child.Entry;
-
-                // Outer div for indentation
-                builder.OpenElement(0, "div");
-                builder.AddAttribute(1, "style", "padding-left: 1.2em;");
-
-                // Inner div for form-check layout
-                builder.OpenElement(2, "div");
-                builder.AddAttribute(3, "class", "form-check");
-
-                builder.OpenElement(4, "input");
-                builder.AddAttribute(5, "type", "checkbox");
-                builder.AddAttribute(6, "class", "form-check-input");
-                builder.AddAttribute(7, "checked", fileEntry.IsSelected);
-                builder.AddAttribute(8, "onchange", EventCallback.Factory.Create(this, () => OnFileSelectionChanged(fileEntry)));
-                builder.CloseElement(); // input
-
-                builder.OpenElement(9, "label");
-                builder.AddAttribute(10, "class", "form-check-label");
-                builder.AddContent(11, "\ud83d\udcc4 " + child.Name);
-                builder.CloseElement(); // label
-
-                builder.CloseElement(); // div.form-check
-                builder.CloseElement(); // outer div
-            }
-        }
-    };
 }

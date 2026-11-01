@@ -1,0 +1,663 @@
+/* Clipped, so nothing in the panes can give the page a scrollbar even for a moment (html, body and .page
+   scroll vertically, see app.css): a scrollbar narrows the panes, and a toolbar on the edge of wrapping
+   could then wrap and unwrap over and over. The narrow layout below stacks the panes and scrolls. */
+.workspace {
+    flex: 1 1 auto;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background-color: var(--surface);
+}
+
+/* Shown when both the source and the diagram are hidden. */
+.workspace-empty {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* ---------- ACTIVITY BAR (panel switches) ---------- */
+.activity-bar {
+    flex: 0 0 3.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.5rem 0.35rem;
+    border-right: 1px solid var(--border);
+    background-color: var(--surface-sunken);
+}
+
+.activity-button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.5rem 0 0.4rem 0;
+    border: none;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text-subtle);
+    font-size: 0.66rem;
+    line-height: 1;
+}
+
+    .activity-button:hover {
+        background-color: var(--hover-strong);
+        color: var(--text);
+    }
+
+    .activity-button.active {
+        background-color: var(--surface);
+        color: var(--text);
+        box-shadow: var(--shadow-sm);
+    }
+
+        /* The red marker on the left of an open panel's switch. */
+        .activity-button.active::before {
+            content: "";
+            position: absolute;
+            top: 0.45rem;
+            bottom: 0.45rem;
+            left: -0.35rem;
+            width: 3px;
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            background-color: var(--accent);
+        }
+
+/* ---------- PANES ---------- */
+.pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.pane-files {
+    flex: 0 0 15rem;
+    border-right: 1px solid var(--border);
+    background-color: var(--surface);
+}
+
+/* The splitter (wwwroot/js/Workspace.js) changes flex-basis when dragged. When the Files pane opens or the
+   window narrows, the editor gives way (down to its minimum) before the diagram does. */
+.pane-source {
+    flex: 0 1 28%;
+    min-width: 200px;
+}
+
+    /* With the diagram hidden, the editor takes all the room (over the splitter's width). */
+    .pane-source.fill {
+        flex: 1 1 auto !important;
+    }
+
+.pane-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: 2.75rem;
+    padding: 0 0.5rem 0 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--surface-muted);
+    font-size: 0.85rem;
+}
+
+    .pane-header ::deep .pane-icon {
+        color: var(--text-muted);
+    }
+
+.pane-title {
+    font-weight: 600;
+}
+
+.pane-close {
+    margin-left: auto;
+}
+
+.pane-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* A 1px line with a wider area to grab. */
+.splitter {
+    flex: 0 0 5px;
+    margin: 0 -2px;
+    z-index: 2;
+    background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+    .splitter:hover,
+    .splitter.dragging {
+        background: var(--accent);
+    }
+
+/* The room the other panes leave (no basis of its own, which would take room from the editor). */
+.pane-diagram {
+    flex: 1 1 0;
+    min-width: 320px;
+}
+
+/* ---------- TOOLBAR ---------- */
+.diagram-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.45rem 0.75rem 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--surface-muted);
+}
+
+.toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.toolbar-separator {
+    align-self: stretch;
+    width: 1px;
+    margin: 0 0.2rem;
+    background-color: var(--border);
+}
+
+.tool-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 2rem;
+    white-space: nowrap;
+}
+
+/* Set apart from the view controls after it. */
+.generate-button {
+    margin-right: 0.6rem;
+}
+
+/* An input with an icon inside on the left. */
+.field-with-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+}
+
+    .field-with-icon ::deep .icon {
+        position: absolute;
+        left: 0.6rem;
+        z-index: 1;
+        color: var(--text-muted);
+        pointer-events: none;
+    }
+
+    .field-with-icon .form-control {
+        height: 2rem;
+        padding-left: 2rem;
+        border-color: var(--border);
+    }
+
+.search-field .form-control {
+    width: 13rem;
+    padding-right: 2.1rem; /* room for the match-case button */
+}
+
+/* The match-case toggle inside the search box, like Visual Studio Code's. */
+.match-case {
+    position: absolute;
+    right: 0.3rem;
+    z-index: 1;
+    height: 1.4rem;
+    padding: 0 0.3rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+    .match-case:hover {
+        background-color: var(--hover);
+    }
+
+    .match-case.on {
+        border-color: var(--primary-border);
+        background-color: var(--primary-soft);
+        color: var(--primary);
+    }
+
+    .match-case:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+    }
+
+.search-count {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+/* Saving: one button over the diagram's bottom right corner that opens the format menu upwards.
+   Above the zoom controls: the open menu's backdrop, which closes it on a click elsewhere, has to cover them. */
+.download-menu {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 5;
+    display: inline-flex;
+}
+
+    .download-menu .menu {
+        top: auto;
+        bottom: calc(100% + 0.35rem);
+    }
+
+.menu-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    height: 2.1rem;
+    padding: 0 0.45rem 0 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-md);
+    color: var(--text-muted);
+}
+
+    .menu-button:hover:not(:disabled),
+    .menu-button.active {
+        color: var(--text);
+    }
+
+    .menu-button:hover:not(:disabled),
+    .menu-button.active {
+        background-color: var(--hover-strong);
+    }
+
+    .menu-button:disabled {
+        color: var(--text-subtle);
+        opacity: 0.5;
+    }
+
+
+/* ---------- FILTERS & OPTIONS ROW ---------- */
+.toolbar-filters {
+    font-size: 0.78rem;
+}
+
+/* Filter chips double as the legend. */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 1.65rem;
+    padding: 0 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background-color: var(--surface);
+    color: var(--text);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+    .chip:hover {
+        border-color: var(--border-strong);
+    }
+
+    .chip.off {
+        background-color: transparent;
+        color: var(--text-muted);
+        opacity: 0.55;
+    }
+
+.swatch-line {
+    display: inline-block;
+    width: 1.2rem;
+    border-top: 2px solid var(--c);
+}
+
+    .swatch-line.implements {
+        border-top-style: dashed;
+    }
+
+    .swatch-line.calls {
+        border-top-width: 3px;
+    }
+
+    .swatch-line.renders {
+        border-top-width: 3px;
+    }
+
+.swatch-box {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 1.5px solid var(--c);
+    border-radius: var(--radius-sm);
+    background-color: var(--cf);
+}
+
+    .swatch-box.interface {
+        border-style: dashed;
+    }
+
+/* Options: joined buttons that each switch on and off by themselves; orange when on, grayed out when off. */
+.toggle-group {
+    display: inline-flex;
+    height: 1.65rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--surface);
+}
+
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.6rem;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+    .toggle + .toggle {
+        border-left: 1px solid var(--border);
+    }
+
+    .toggle ::deep .icon {
+        opacity: 0.6;
+    }
+
+    .toggle:hover {
+        background-color: var(--hover);
+        color: var(--text);
+    }
+
+    .toggle.on {
+        background-color: var(--primary-soft);
+        color: var(--primary);
+        font-weight: 600;
+    }
+
+        .toggle.on ::deep .icon {
+            opacity: 1;
+        }
+
+    /* The group clips the usual outer focus ring, so draw it inside. */
+    .toggle:focus-visible {
+        box-shadow: inset 0 0 0 2px var(--primary-border);
+    }
+
+/* ---------- DIAGRAM ---------- */
+.diagram-body {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+}
+
+/* Clipped: when the toolbar wraps onto another row, the diagram canvases keep their old height until
+   they're resized, and would stick out below the pane for a moment. */
+.graph-area {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.graph-container {
+    position: absolute;
+    inset: 0;
+}
+
+/* The Graphviz layout: an SVG drawn by NpmJS/src/CodeGraphView.js, panned and zoomed with a CSS transform.
+   The gv-* classes copy the Cytoscape highlighting (selection, focus, search) onto it. */
+.graphviz-container {
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.graphviz-container.panning {
+    cursor: grabbing;
+}
+
+.graphviz-container ::deep .gv-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+}
+
+.graphviz-container ::deep g.node,
+.graphviz-container ::deep g.cluster {
+    cursor: pointer;
+}
+
+.graphviz-container ::deep .gv-faded {
+    opacity: 0.12;
+}
+
+.graphviz-container ::deep g.cluster.gv-faded {
+    opacity: 0.35;
+}
+
+.graphviz-container ::deep g.gv-selected :is(path, polygon) {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+
+.graphviz-container ::deep g.node.gv-selected {
+    filter: drop-shadow(0 0 5px rgba(242, 89, 88, 0.45));
+}
+
+/* A type holding functions is drawn as a cluster (a box around them). */
+.graphviz-container ::deep g.node.gv-match,
+.graphviz-container ::deep g.cluster.gv-match {
+    filter: drop-shadow(0 0 3px #ffcc33) drop-shadow(0 0 3px #ffcc33);
+}
+
+.graphviz-container ::deep .gv-error {
+    margin: 2rem;
+    max-width: 32rem;
+    color: var(--text-muted);
+}
+
+.status-banner {
+    position: absolute;
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.4rem 0.35rem 0.9rem;
+    border: 1px solid var(--primary-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--primary-soft);
+    box-shadow: var(--shadow-md);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+    .status-banner .tool-button {
+        height: 1.75rem;
+        gap: 0.25rem;
+    }
+
+.error-banner {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding-right: 0.4rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    font-size: 0.85rem;
+}
+
+.error-text {
+    flex: 1 1 auto;
+}
+
+/* With the diagram hidden, its error banner shows at the top of the window instead. */
+.floating-error {
+    position: fixed;
+    top: 0.75rem;
+    left: 50%;
+    z-index: 30;
+    width: min(40rem, calc(100vw - 2rem));
+    transform: translateX(-50%);
+}
+
+    .floating-error .error-banner {
+        position: static;
+        margin: 0;
+    }
+
+.empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem;
+    color: var(--text-muted);
+    text-align: center;
+    pointer-events: none;
+}
+
+/* Zoom in the top right corner, side by side; saving the diagram in the bottom right corner. */
+.zoom-controls {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 4;
+    display: flex;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-md);
+}
+
+    .zoom-controls button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.1rem;
+        height: 2.1rem;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--text-muted);
+    }
+
+        .zoom-controls button + button {
+            border-left: 1px solid var(--border);
+        }
+
+        .zoom-controls button:hover {
+            background-color: var(--hover);
+            color: var(--text);
+        }
+
+.graph-stats {
+    position: absolute;
+    left: 0.6rem;
+    bottom: 0.4rem;
+    padding: 0 0.4rem;
+    border-radius: var(--radius-sm);
+    background-color: rgba(255, 255, 255, 0.85);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+    .graph-stats .btn-link {
+        font-size: 0.75rem;
+    }
+
+/* Narrow screens: the activity bar runs along the top, and files, source and diagram stack. */
+@media (max-width: 900px) {
+    .workspace {
+        flex-direction: column;
+        overflow: visible;
+    }
+
+    .activity-bar {
+        flex: 0 0 auto;
+        flex-direction: row;
+        padding: 0.35rem;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .activity-button {
+        flex-direction: row;
+        gap: 0.4rem;
+        padding: 0.4rem 0.7rem;
+        font-size: 0.8rem;
+    }
+
+        /* The marker sits along the bottom edge of the button here. */
+        .activity-button.active::before {
+            top: auto;
+            right: 0.6rem;
+            bottom: 0;
+            left: 0.6rem;
+            width: auto;
+            height: 3px;
+            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        }
+
+    .pane-files {
+        flex: 0 0 auto;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .pane-source {
+        flex: 0 0 45vh !important;
+    }
+
+    .splitter {
+        display: none;
+    }
+
+    .pane-diagram {
+        flex: 0 0 auto;
+        min-width: 0;
+    }
+
+    .diagram-body {
+        flex-direction: column;
+    }
+
+    .graph-area {
+        flex: 0 0 75vh;
+    }
+}

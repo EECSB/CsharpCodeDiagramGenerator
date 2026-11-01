@@ -5,12 +5,24 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+    <!-- Roslyn ships its messages in 13 languages; the app is in English, so the rest are left out of the download. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- Release publishes are compiled ahead of time to WebAssembly: analysis runs about twice as fast,
+       but the .NET download grows from about 6 to 13 MB (Brotli) and publishing takes several minutes.
+       Release builds need the WebAssembly build tools: dotnet workload install wasm-tools
+       (or wasm-tools-net9 with a .NET 10 SDK). -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.14" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.14" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.11.0" />
+    <!-- Only the C# compiler: the Microsoft.CodeAnalysis package also brings Visual Basic and Workspaces (about 10 MB more). -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageReference Include="SharpCompress" Version="0.50.5" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,24 +34,34 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="wwwroot\Node\**" />
-    <Content Remove="wwwroot\Node\**" />
-    <EmbeddedResource Remove="wwwroot\Node\**" />
-    <None Remove="wwwroot\Node\**" />
+    <Compile Remove="Tests\**" />
+    <Content Remove="Tests\**" />
+    <EmbeddedResource Remove="Tests\**" />
+    <None Remove="Tests\**" />
   </ItemGroup>
 
+  <!-- The JavaScript bundles (Monaco editor, Cytoscape.js diagram) are built with npm from NpmJS into
+       wwwroot\js\webpack-bundle. npm install and npm run build each only run when their inputs changed. -->
   <ItemGroup>
-    <Content Include="NpmJS\src\VizGraphInterop.js" />
+    <NpmBuildInput Include="NpmJS\src\**\*.js;NpmJS\webpack.config.js;NpmJS\package-lock.json" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="wwwroot\js\home\web_user\.nuget\NuGet\NuGet.Config">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+  <Target Name="BuildJavaScript" BeforeTargets="BeforeBuild" DependsOnTargets="NpmInstall;NpmBuild">
+    <!-- webpack replaces the folder's contents, so the items collected when the project was loaded can
+         name files that are gone and miss new ones: drop the missing ones and add what is there now. -->
+    <ItemGroup>
+      <_DeletedBundleFile Include="@(Content)" Condition="!Exists('%(Content.FullPath)')" />
+      <Content Remove="@(_DeletedBundleFile)" />
+      <Content Include="wwwroot\js\webpack-bundle\**" Exclude="@(Content)" />
+    </ItemGroup>
+  </Target>
 
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+  <Target Name="NpmInstall" Inputs="NpmJS\package.json;NpmJS\package-lock.json" Outputs="NpmJS\node_modules\.install-stamp">
     <Exec Command="npm install" WorkingDirectory="NpmJS" />
+    <Touch Files="NpmJS\node_modules\.install-stamp" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="NpmBuild" Inputs="@(NpmBuildInput)" Outputs="wwwroot\js\webpack-bundle\index.bundle.js;wwwroot\js\webpack-bundle\codegraph.bundle.js">
     <Exec Command="npm run build" WorkingDirectory="NpmJS" />
   </Target>
 
