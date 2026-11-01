@@ -1,0 +1,182 @@
+.details {
+    flex: 0 0 22rem;
+    max-width: 45%;
+    overflow-y: auto;
+    padding: 0.75rem 1rem 1.5rem 1rem;
+    border-left: 1px solid var(--border);
+    background-color: var(--surface);
+    font-size: 0.85rem;
+}
+
+.details-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.details-title {
+    margin: 0.4rem 0 0.15rem 0;
+    font-family: var(--font-mono);
+    font-size: 1.05rem;
+    font-weight: bold;
+    word-break: break-word;
+}
+
+.details-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.source-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+}
+
+.action-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.details-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.75rem 0 0.25rem 0;
+}
+
+section {
+    margin-top: 1rem;
+}
+
+h3 {
+    display: inline-block;
+    margin: 0 0 0.35rem 0;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.count {
+    margin-left: 0.25rem;
+    font-weight: normal;
+}
+
+summary {
+    cursor: pointer;
+}
+
+.kind-badge {
+    display: inline-block;
+    padding: 0.05rem 0.5rem;
+    border: 1.5px solid var(--c);
+    border-radius: var(--radius-pill);
+    background-color: var(--cf);
+    color: var(--c);
+    font-size: 0.72rem;
+    font-weight: bold;
+}
+
+.kind-dot {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 1.5px solid var(--c);
+    border-radius: var(--radius-sm);
+    background-color: var(--cf);
+}
+
+.member-list,
+.relation-list,
+.call-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.member-list li,
+.call-list li {
+    padding: 0.1rem 0;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    word-break: break-word;
+}
+
+/* A member looks like the rest of the list until pointed at: it opens its declaration in the editor. */
+.member-link {
+    display: block;
+    width: 100%;
+    padding: 0.05rem 0.25rem;
+    margin: 0 -0.25rem;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.member-link:hover,
+.member-link:focus-visible {
+    background: var(--primary-soft);
+    color: var(--primary);
+}
+
+.file-path {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    word-break: break-all;
+}
+
+.relation-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--divider);
+}
+
+.relation-kind {
+    flex: 0 0 6.5rem;
+    color: var(--c);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.type-link {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    text-align: left;
+    word-break: break-word;
+}
+
+.call-details {
+    flex: 1 0 100%;
+    padding-left: 6.9rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.call-list {
+    padding-left: 0.5rem;
+}
+
+@media (max-width: 900px) {
+    .details {
+        flex: 0 0 auto;
+        max-width: none;
+        max-height: 50vh;
+        border-left: none;
+        border-top: 1px solid var(--border);
+    }
+}

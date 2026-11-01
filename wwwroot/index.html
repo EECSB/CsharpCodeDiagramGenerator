@@ -5,15 +5,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CSharpCodeGraph</title>
-    <base href="/" />
+    <!-- The app is served from a folder of eecs.blog, and from the root when developing. The <base> is added by
+         this script rather than written out: the browser fetches the files linked below before any script runs,
+         and would fetch them from the site's root with a <base href="/">. -->
     <script>
-        const base = document.getElementsByTagName('base')[0];
-
-        if (window.location.host.includes('localhost')) { //When developing.
-            base.setAttribute('href', '/');
-        } else {
-            base.setAttribute('href', window.location.pathname);
-        }
+        const base = document.createElement('base');
+        base.setAttribute('href', window.location.host.includes('localhost') ? '/' : window.location.pathname);
+        document.head.appendChild(base);
     </script>
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="css/app.css" />
@@ -33,15 +31,26 @@
         <div class="loading-progress-text"></div>
     </div>
 
+    <!-- Blazor shows this on an unhandled error; it wires up the .reload and .dismiss elements itself.
+         The icons are Lucide's circle-alert and x, as in Components/Icon.razor. -->
     <div id="blazor-error-ui">
-        An unhandled error has occurred.
-        <a href="." class="reload">Reload</a>
-        <span class="dismiss">🗙</span>
+        <div class="error-ui-content">
+            <svg class="error-ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />
+            </svg>
+            <span class="error-ui-text">Something went wrong in the app.</span>
+            <a href="." class="reload">Reload</a>
+            <span class="dismiss icon-button" role="button" aria-label="Dismiss" title="Dismiss">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                </svg>
+            </span>
+        </div>
     </div>
 
-    <script src="js/webpack-bundle/vizgraph.bundle.js"></script>
+    <script src="js/webpack-bundle/codegraph.bundle.js"></script>
 
-    <script src="js/DiagramPanZoom.js"></script>
+    <script src="js/Workspace.js"></script>
 
     <script src="js/JSUtils.js"></script>
     <script src="js/webpack-bundle/index.bundle.js"></script>

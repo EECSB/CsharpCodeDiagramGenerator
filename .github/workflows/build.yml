@@ -1,0 +1,34 @@
+name: Build and test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+# Runs the tests and a (Debug) build on pushes to master and on pull requests.
+
+jobs:
+  build:
+    # Windows, like the machine the project is developed on.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 9.0.x
+
+      # dotnet build runs npm install and webpack in NpmJS (see CSharpCodeGraph.csproj).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: NpmJS/package-lock.json
+
+      - name: Test
+        run: dotnet test Tests/CSharpCodeGraph.Tests
+
+      # Debug: Release builds are AOT-compiled and need the wasm-tools workload (see CSharpCodeGraph.csproj).
+      - name: Build
+        run: dotnet build CSharpCodeGraph.csproj

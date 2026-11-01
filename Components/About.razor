@@ -1,41 +1,56 @@
-﻿@if (show)
+﻿@if (Show)
 {
-    <div class="popupDiv popupZIndex_1">
-        <div class="col">
-            <div class="row mb-4">
-                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
-                    About
-                </div>
+    <div class="dialog-backdrop" @onclick="Close"></div>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="about-title" tabindex="-1" @ref="dialog" @onkeydown="onKeyDown">
+        <div class="dialog-header">
+            <Icon Name="info" Size="18" Class="dialog-icon" />
+            <h2 id="about-title">About</h2>
+            <button class="icon-button" @onclick="Close" title="Close" aria-label="Close">
+                <Icon Name="x" />
+            </button>
+        </div>
 
-                <div class="col d-flex justify-content-end">
-                    <button style="padding: 3px 10px; height: fit-content; background-color: #f25958; color: white; border: none;" @onclick="() => { Show = !Show; }">X</button>
-                </div>
-            </div>
-
-            <div class="row">
-                <p>
-                    I wanted to get a diagram of some C# code I was working on. Visual Studio offers this as a feature called <a href="https://learn.microsoft.com/en-us/visualstudio/modeling/map-dependencies-across-your-solutions?view=visualstudio" target="_blank" rel="noopener noreferrer">Code Map</a>, but it's <a href="https://learn.microsoft.com/en-us/visualstudio/modeling/analyze-and-model-your-architecture?view=visualstudio#VersionSupport" target="_blank" rel="noopener noreferrer">only available</a> for the enterprise edition.
-                    So I quickly cobbled together this project by reusing some code from other projects I made and "vibe coded" the rest with AI(so I don't guarantee code quality or that it's without bugs).
-                </p>
-                <p>
-                    Developed by <a href="https://eecs.blog" target="_blank" rel="noopener noreferrer">The EECS Blog</a>, project <a href="https://github.com/EECSB/CsharpCodeDiagramGenerator" target="_blank" rel="noopener noreferrer">Github repository</a>.
-                </p>
-            </div>
+        <div class="dialog-body">
+            <p>
+                I wanted to get a diagram of some C# code I was working on. Visual Studio offers this as a feature called <a href="https://learn.microsoft.com/en-us/visualstudio/modeling/map-dependencies-across-your-solutions?view=visualstudio" target="_blank" rel="noopener noreferrer">Code Map</a>, but it's <a href="https://learn.microsoft.com/en-us/visualstudio/modeling/analyze-and-model-your-architecture?view=visualstudio#VersionSupport" target="_blank" rel="noopener noreferrer">only available</a> for the enterprise edition.
+                So I quickly cobbled together this project by reusing some code from other projects I made and "vibe coded" the rest with AI(so I don't guarantee code quality or that it's without bugs).
+            </p>
+            <p>
+                Developed by <a href="https://eecs.blog" target="_blank" rel="noopener noreferrer">The EECS Blog</a>, project <a href="https://github.com/EECSB/CsharpCodeDiagramGenerator" target="_blank" rel="noopener noreferrer">Github repository</a>.
+            </p>
+            <p class="dialog-footnote">
+                Icons by <a href="https://lucide.dev" target="_blank" rel="noopener noreferrer">Lucide</a> (ISC license).
+            </p>
         </div>
     </div>
 }
 
 @code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
 
-    private bool show = false;
-    [Parameter]
-    public bool Show
+    private ElementReference dialog;
+    private bool wasShown;
+    private bool focusPending;
+
+    protected override void OnParametersSet()
     {
-        get { return show; }
-        set 
-        { 
-            show = value; 
-            StateHasChanged(); 
+        // Focus moves into the dialog when it opens, so Escape closes it right away.
+        if (Show && !wasShown)
+            focusPending = true;
+        wasShown = Show;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusPending)
+        {
+            focusPending = false;
+            await dialog.FocusAsync();
         }
     }
+
+    private Task onKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? Close() : Task.CompletedTask;
+
+    private Task Close() => ShowChanged.InvokeAsync(false);
 }

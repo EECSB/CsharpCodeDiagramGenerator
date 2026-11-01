@@ -1,148 +1,387 @@
 ﻿@page "/"
 
 @inject IJSRuntime jsRuntime;
-@implements IDisposable
+@inject HttpClient httpClient;
+@implements IAsyncDisposable
 
 <PageTitle>C# Code Diagram Generator</PageTitle>
 
-<div style="padding: 0 6em; overflow: hidden;">
-    <!-- Loading overlay -->
-    @if (isLoading)
+<div class="workspace">
+
+    <!-- Panel switches, like an editor's activity bar -->
+    <nav class="activity-bar" aria-label="Panels">
+        <button class="activity-button @(showFiles ? "active" : "")" @onclick="() => showFiles = !showFiles" aria-pressed="@(showFiles ? "true" : "false")" title="Project files">
+            <Icon Name="folder-tree" Size="20" />
+            <span>Files</span>
+        </button>
+        <button class="activity-button @(showSource ? "active" : "")" @onclick="() => showSource = !showSource" aria-pressed="@(showSource ? "true" : "false")" title="Source code">
+            <Icon Name="code" Size="20" />
+            <span>Source</span>
+        </button>
+        <button class="activity-button @(showDiagram ? "active" : "")" @onclick="() => showDiagram = !showDiagram" aria-pressed="@(showDiagram ? "true" : "false")" title="Diagram">
+            <Icon Name="network" Size="20" />
+            <span>Diagram</span>
+        </button>
+    </nav>
+
+    <!-- Project Files -->
+    <aside class="pane pane-files" hidden="@(!showFiles)">
+        <FileTreePanel FileEntries="projectFiles" IsLoading="isUploading" LoadingMessage="@loadingMessage" OnArchiveUpload="onArchiveUpload" OnGitHubLoad="onGitHubLoad" OnSelectionChanged="onSelectionChanged"
+                       OnFileClicked="revealFile" OnClose="() => showFiles = false" />
+    </aside>
+
+    <!-- Code Editor -->
+    @* With the diagram hidden, the editor takes all the room. *@
+    <section class="pane pane-source @(showDiagram ? "" : "fill")" id="sourcePane" hidden="@(!showSource)">
+        <div class="pane-header">
+            <Icon Name="code" Class="pane-icon" />
+            <span class="pane-title">Source</span>
+            <button class="icon-button pane-close" @onclick="() => showSource = false" title="Hide the source" aria-label="Hide the source">
+                <Icon Name="panel-left-close" />
+            </button>
+        </div>
+        <div id="csharpEditor" class="pane-body"></div>
+    </section>
+
+    <div class="splitter" id="sourceSplitter" hidden="@(!showSource || !showDiagram)" title="Drag to resize"></div>
+
+    @if (!showSource && !showDiagram)
     {
-        <div class="d-flex align-items-center alert alert-info mt-2 py-2">
-            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-            <span>@loadingMessage</span>
+        <div class="workspace-empty">
+            <Icon Name="panel-left-close" Size="28" StrokeWidth="1.5" />
+            <span>Open the source or the diagram from the bar on the left.</span>
         </div>
     }
 
-    <!-- File Tree + Code Editor side by side -->
-    <div class="d-flex mt-2" style="gap: 1em;">
-
-        <!-- Project Files Panel -->
-        <FileTreePanel FileEntries="zipFileEntries" IsLoading="isLoading" LoadingMessage="@loadingMessage" OnZipUpload="onZipUpload" OnSelectionChanged="onSelectionChanged"/>
-
-        <!-- Code Editor -->
-        <div style="flex: 1; min-width: 0;">
-            <label for="csharpEditor"><strong>Source Code:</strong></label>
-            <div id="csharpEditor" class="mt-2" style="width: 100%; height: calc(100vh - 12em); border: 1px solid #ccc;"></div>
-        </div>
-    </div>
-
-    <br>
+    @if (!showDiagram && !string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="floating-error">@ErrorBanner</div>
+    }
 
     <!-- Code Diagram -->
-    <div class="mt-5 mb-4">
-        <div>
-            <h4><strong>Code Diagram</strong></h4>
-        </div>
+    <section class="pane pane-diagram" hidden="@(!showDiagram)">
+        <div class="diagram-toolbar">
+            <div class="toolbar-row">
+                <button class="btn btn-sm btn-cta tool-button generate-button" @onclick="GenerateAsync" disabled="@isBusy" title="Generate the diagram">
+                    @if (isBusy)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <Icon Name="play" />
+                    }
+                    <span>Generate</span>
+                </button>
 
-        <!-- Diagram controls -->
-        <div class="d-flex flex-wrap align-items-center mb-2" style="gap: 0.75em;">
-            <button class="btn btn-primary" @onclick="draw" disabled="@isLoading" title="Generate Diagram">
-                @if (isLoading && loadingMessage == "Generating diagram...")
+                <DropdownSelect Label="View" Title="What the boxes stand for" Options="ViewOptions" Value="@viewMode" ValueChanged="setViewAsync" />
+                <DropdownSelect Label="Layout" Title="How the boxes are arranged" Options="LayoutOptions" Value="@layoutName" ValueChanged="setLayoutAsync" />
+
+                <label class="field-with-icon search-field">
+                    <Icon Name="search" />
+                    <input type="search" class="form-control form-control-sm" placeholder="Find a type" aria-label="Find a type"
+                           @bind="searchText" @bind:event="oninput" @bind:after="onSearchChanged" @onkeydown="onSearchKeyDown" />
+                    @* Like Visual Studio Code's "Match Case": Aa, highlighted when on. *@
+                    <button type="button" class="match-case @(matchCase ? "on" : "")" @onclick="toggleMatchCaseAsync" aria-pressed="@(matchCase ? "true" : "false")"
+                            title="@ToggleTitle("Match case", matchCase)" aria-label="Match case">Aa</button>
+                </label>
+                @if (!string.IsNullOrWhiteSpace(searchText))
                 {
-                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <span class="search-count">@searchMatches found</span>
                 }
-                Generate Diagram
-            </button>
-            @if (!string.IsNullOrEmpty(codeGraph))
-            {
-                <button class="btn btn-sm btn-outline-secondary" @onclick="resetView" title="Reset zoom and position">Reset View</button>
-            }
-
-            <div class="form-check form-check-inline mb-0">
-                <input class="form-check-input" type="checkbox" id="chkInterfaces" @bind="diagramSettings.ShowInterfaces" />
-                <label class="form-check-label" for="chkInterfaces">Show Interfaces</label>
-            </div>
-            <div class="form-check form-check-inline mb-0">
-                <input class="form-check-input" type="checkbox" id="chkMethodCalls" @bind="diagramSettings.ShowMethodCalls" />
-                <label class="form-check-label" for="chkMethodCalls">Show Method Calls</label>
-            </div>
-            <div class="form-check form-check-inline mb-0">
-                <input class="form-check-input" type="checkbox" id="chkVariables" @bind="diagramSettings.ShowVariables" />
-                <label class="form-check-label" for="chkVariables">Show Variables</label>
-            </div>
-            <div class="form-check form-check-inline mb-0">
-                <input class="form-check-input" type="checkbox" id="chkOnlyMyCode" @bind="diagramSettings.OnlyShowMyCode" />
-                <label class="form-check-label" for="chkOnlyMyCode">Only Show My Code</label>
             </div>
 
+            <div class="toolbar-row toolbar-filters">
+                @foreach (var filter in EdgeFilters.Where(f => presentKinds == null || presentKinds.Contains(f.Kind)))
+                {
+                    bool visible = !hiddenEdgeKinds.Contains(filter.Kind);
+                    <button class="chip @(visible ? "" : "off")" @onclick="() => toggleEdgeKindAsync(filter.Kind)" aria-pressed="@(visible ? "true" : "false")" title="@($"Show {filter.Label.ToLowerInvariant()} relationships")">
+                        <span class="swatch-line @filter.Kind" style="--c: var(--edge-@filter.Kind);"></span>@filter.Label
+                    </button>
+                }
+
+                <span class="toolbar-separator"></span>
+
+                @foreach (var filter in NodeFilters.Where(f => presentKinds == null || f.Kinds.Any(presentKinds.Contains)))
+                {
+                    bool visible = !filter.Kinds.All(hiddenNodeKinds.Contains);
+                    <button class="chip @(visible ? "" : "off")" @onclick="() => toggleNodeKindsAsync(filter.Kinds)" aria-pressed="@(visible ? "true" : "false")" title="@($"Show {filter.Label.ToLowerInvariant()}")">
+                        <span class="swatch-box @filter.CssKind" style="--c: var(--kind-@filter.CssKind); --cf: var(--kind-@(filter.CssKind)-fill);"></span>@filter.Label
+                    </button>
+                }
+
+                <span class="toolbar-separator"></span>
+
+                @* Toggles, orange when on. The two groupings take turns: switching one on switches the other off. *@
+                <div class="toggle-group" role="group" aria-label="Grouping">
+                    <button class="toggle @(grouping == NamespaceGrouping ? "on" : "")" @onclick="() => toggleGroupingAsync(NamespaceGrouping)" aria-pressed="@(grouping == NamespaceGrouping ? "true" : "false")"
+                            title="@ToggleTitle("Draw a box around the types of each namespace", grouping == NamespaceGrouping)">
+                        <Icon Name="group" Size="14" /><span>Group by namespace</span>
+                    </button>
+                    <button class="toggle @(grouping == FileGrouping ? "on" : "")" @onclick="() => toggleGroupingAsync(FileGrouping)" aria-pressed="@(grouping == FileGrouping ? "true" : "false")"
+                            title="@ToggleTitle("Draw a box around the types of each file; clicking a file in the Project panel selects it", grouping == FileGrouping)">
+                        <Icon Name="file-code" Size="14" /><span>Group by file</span>
+                    </button>
+                </div>
+                <div class="toggle-group" role="group" aria-label="Options">
+                    <button class="toggle @(showMembers ? "on" : "")" @onclick="toggleMembersAsync" aria-pressed="@(showMembers ? "true" : "false")"
+                            title="@ToggleTitle("List the methods and properties inside each box", showMembers)">
+                        <Icon Name="list" Size="14" /><span>Members</span>
+                    </button>
+                    <button class="toggle @(showFunctions ? "on" : "")" @onclick="toggleFunctionsAsync" aria-pressed="@(showFunctions ? "true" : "false")"
+                            title="@ToggleTitle("Draw each function inside its box, with calls from function to function; clicking one traces its callers and callees", showFunctions)">
+                        <Icon Name="workflow" Size="14" /><span>Functions</span>
+                    </button>
+                    <button class="toggle @(diagramSettings.ShowVariables ? "on" : "")" @onclick="toggleVariablesAsync" aria-pressed="@(diagramSettings.ShowVariables ? "true" : "false")"
+                            title="@ToggleTitle("Fields and properties, and the types they use", diagramSettings.ShowVariables)">
+                        <Icon Name="variable" Size="14" /><span>Fields &amp; properties</span>
+                    </button>
+                    <button class="toggle @(!diagramSettings.OnlyShowMyCode ? "on" : "")" @onclick="toggleFrameworkTypesAsync" aria-pressed="@(!diagramSettings.OnlyShowMyCode ? "true" : "false")"
+                            title="@ToggleTitle("Framework types your code uses", !diagramSettings.OnlyShowMyCode)">
+                        <Icon Name="package" Size="14" /><span>Framework types</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <hr>
+        <div class="diagram-body">
+            <div class="graph-area">
+                <div id="graphContainer" class="graph-container"></div>
+                @* The Graphviz layout's drawing; CodeGraphView.js shows it instead of the one above. *@
+                <div id="graphvizContainer" class="graph-container graphviz-container" hidden></div>
 
-        <div id="diagramViewport" style="width: 100%; height: calc(100vh - 12em); overflow: hidden; border: 1px solid #ccc; position: relative; cursor: grab; background: #fafafa;">
-            <div id="diagramContent" style="position: absolute; top: 0; left: 0; transform-origin: 0 0;">
-                @((MarkupString)codeGraph)
+                @if (isBusy)
+                {
+                    <div class="status-banner" role="status">
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        <span>@statusMessage</span>
+                        @if (!isLayingOut)
+                        {
+                            <button class="btn btn-sm btn-outline-danger tool-button" @onclick="cancelGeneration">
+                                <Icon Name="x" Size="14" /><span>Cancel</span>
+                            </button>
+                        }
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    @ErrorBanner
+                }
+
+                @if (currentGraph == null && !isBusy)
+                {
+                    <div class="empty-state">
+                        <Icon Name="mouse-pointer-click" Size="32" StrokeWidth="1.5" />
+                        <span>Paste C# code into the editor or drop a project archive on the Project panel, then press Generate.</span>
+                    </div>
+                }
+                else if (currentGraph != null)
+                {
+                    @* Download, in the bottom right corner: opens the choice of formats; nothing is saved until one is picked. *@
+                    <div class="download-menu">
+                        <button class="menu-button @(showDownloadMenu ? "active" : "")" @onclick="() => showDownloadMenu = !showDownloadMenu"
+                                aria-haspopup="menu" aria-expanded="@(showDownloadMenu ? "true" : "false")" title="Save the diagram" aria-label="Save the diagram">
+                            <Icon Name="camera" />
+                            <Icon Name="chevron-up" Size="14" />
+                        </button>
+                        @if (showDownloadMenu)
+                        {
+                            <div class="menu-backdrop" @onclick="() => showDownloadMenu = false"></div>
+                            <div class="menu" role="menu">
+                                <button role="menuitem" @onclick="downloadPngFromMenuAsync">
+                                    <Icon Name="image" />
+                                    <span class="menu-label">PNG image<small>The diagram as you see it</small></span>
+                                </button>
+                                <button role="menuitem" @onclick="downloadDotFromMenuAsync">
+                                    <Icon Name="file-code" />
+                                    <span class="menu-label">Graphviz DOT<small>Everything, without the view filters</small></span>
+                                </button>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="zoom-controls" role="group" aria-label="Zoom">
+                        <button @onclick="() => zoomAsync(1.25)" title="Zoom in" aria-label="Zoom in"><Icon Name="zoom-in" /></button>
+                        <button @onclick="() => zoomAsync(0.8)" title="Zoom out" aria-label="Zoom out"><Icon Name="zoom-out" /></button>
+                        <button @onclick="fitAsync" title="Fit the whole diagram in view" aria-label="Fit the whole diagram in view"><Icon Name="maximize" /></button>
+                    </div>
+
+                    <div class="graph-stats">
+                        @currentGraph.Types.Count(t => !t.IsExternal) types · @currentGraph.Edges.Count(e => !e.IsSelfLoop) relationships
+                        @if (isIsolated)
+                        {
+                            <span> · focused (<button class="btn btn-link btn-sm p-0 align-baseline" @onclick="showAllAsync">show all</button>)</span>
+                        }
+                    </div>
+                }
             </div>
-        </div>
 
-    </div>
+            <DetailsPanel Graph="currentGraph"
+                          SelectedTypeId="@selectedTypeId"
+                          SelectedNamespace="@selectedNamespace"
+                          SelectedFile="@selectedFile"
+                          IsIsolated="isIsolated"
+                          IsNamespaceView="@(viewMode == NamespacesView)"
+                          OnSelectType="selectTypeAsync"
+                          OnOpenNamespace="openNamespaceAsync"
+                          OnGoToSource="goToSourceAsync"
+                          OnGoToMember="goToMemberAsync"
+                          OnGoToFile="revealFile"
+                          OnIsolate="isolateAsync"
+                          OnShowAll="showAllAsync"
+                          OnClose="clearSelectionAsync" />
+        </div>
+    </section>
 </div>
 
 @code {
     #region Variables
 
-    private const long MaxZipSize = 2L * 1024 * 1024 * 1024; // 2GB
+    private const string TypesView = "types";
+    private const string NamespacesView = "namespaces";
+    // How the types are boxed together (CodeGraphView.js's state.groupBy).
+    private const string NamespaceGrouping = "namespace";
+    private const string FileGrouping = "file";
+    private const string NoGrouping = "none";
 
-    private string sourceCode = @"
-                using System;
-                using MyNamespace;
+    // Uploaded projects with more types than this open in the namespace overview.
+    private const int LargeProjectTypeCount = 150;
 
-                public class Program
-                {
-                    public static void Main()
-                    {
-                        MyClass inst1 = new MyClass();
-                        inst1.MyMethod();
+    // The whole archive is held in browser memory, so keep this well below what WebAssembly can address.
+    private const long MaxArchiveSize = 512L * 1024 * 1024; // 512MB
 
-                        MyClass inst2 = new MyClass2();
-                        inst2.MyMethod3();
-                    }
-                }
+    private static readonly (string Kind, string Label)[] EdgeFilters =
+    {
+        ("inherits", "Inherits"),
+        ("implements", "Implements"),
+        ("uses", "Uses"),
+        ("calls", "Calls"),
+        ("renders", "Renders")
+    };
 
-                namespace MyNamespace
-                {
-                    public class MyClass
-                    {
-                        public void MyMethod()
-                        {
-                            Console.WriteLine(""Hello, World!"");
-                            MyMethod2();
-                        }
+    private static readonly (string Label, string CssKind, string[] Kinds)[] NodeFilters =
+    {
+        ("Classes", "class", new[] { "class" }),
+        ("Interfaces", "interface", new[] { "interface" }),
+        ("Structs & records", "record", new[] { "struct", "record", "recordStruct" }),
+        ("Enums", "enum", new[] { "enum" }),
+        ("Delegates", "delegate", new[] { "delegate" }),
+        ("JS modules", "module", new[] { "module" })
+    };
 
-                        public void MyMethod2()
-                        {
-                            Console.WriteLine(""Hello, World2!"");
-                        }
-                    }
+    private static readonly DropdownSelect.Option[] ViewOptions =
+    {
+        new(TypesView, "Types", "boxes", "One box per type"),
+        new(NamespacesView, "Namespaces", "layers", "One box per namespace")
+    };
 
-                    public class MyClass2
-                    {
-                        public void MyMethod3()
-                        {
-                            Console.WriteLine(""Hello, World!"");
-                            MyMethod2();
-                        }
+    // The values are the layout names in NpmJS/src/CodeGraphView.js: two Cytoscape layouts, and Graphviz,
+    // which draws the diagram itself.
+    private static readonly DropdownSelect.Option[] LayoutOptions =
+    {
+        new("fcose", "Clustered", "network", "Related types close together"),
+        new("dagre", "Layered", "workflow", "Left to right, along the arrows"),
+        new("graphviz", "Graphviz", "spline", "Drawn by Graphviz, like the first version")
+    };
 
-                        public void MyMethod4()
-                        {
-                            Console.WriteLine(""Hello, World2!"");
-                        }
-                    }
-                }";
+    // The example in the editor. Its lines start at the left margin, so the code has no indentation of its own
+    // (Razor can't read raw string literals, which would allow indenting it here).
+    private string sourceCode = @"using System;
+using MyNamespace;
 
-    private string codeGraph = string.Empty;
-    private string cytoscapeJson = string.Empty;
+public class Program
+{
+    public static void Main()
+    {
+        MyClass inst1 = new MyClass();
+        inst1.MyMethod();
 
-    private DiagramGenerator.DiagramSettings diagramSettings = new();
+        MyClass2 inst2 = new MyClass2();
+        inst2.MyMethod3();
+    }
+}
 
-    private bool isLoading;
+namespace MyNamespace
+{
+    public class MyClass
+    {
+        public void MyMethod()
+        {
+            Console.WriteLine(""Hello, World!"");
+            MyMethod2();
+        }
+
+        public void MyMethod2()
+        {
+            Console.WriteLine(""Hello, World2!"");
+        }
+    }
+
+    public class MyClass2
+    {
+        public void MyMethod3()
+        {
+            Console.WriteLine(""Hello, World!"");
+            MyClass helper = new MyClass();
+            helper.MyMethod2();
+        }
+
+        public void MyMethod4()
+        {
+            Console.WriteLine(""Hello, World2!"");
+        }
+    }
+}";
+
+    // Over the diagram, or at the top of the window while the diagram is hidden.
+    private RenderFragment ErrorBanner => @<div class="alert alert-danger error-banner py-2" role="alert">
+        <Icon Name="circle-alert" />
+        <span class="error-text">@errorMessage</span>
+        <button class="icon-button" @onclick="() => errorMessage = string.Empty" title="Dismiss" aria-label="Dismiss"><Icon Name="x" /></button>
+    </div>;
+
+    private DotNetObjectReference<Main>? selfReference;
+
+    // Analysis
+    private DiagramSettings diagramSettings = new();
+    private CodeGraph? currentGraph;
+    // Node and edge kinds in the current diagram (as GraphData names them); only those get a filter chip.
+    private HashSet<string>? presentKinds;
+    private CancellationTokenSource? generationCts;
+    private CancellationTokenSource? debounceCts;
+    private bool isBusy;
+    private bool isLayingOut; // the last step of isBusy, which can't be cancelled
+    private string statusMessage = string.Empty;
+    private string errorMessage = string.Empty;
+
+    // Files
+    private List<ProjectFileEntry> projectFiles = new();
+    private bool isUploading;
     private string loadingMessage = string.Empty;
 
-    private List<ZipFileEntry> zipFileEntries = new();
+    // View
+    private bool showFiles = true;
+    private bool showSource = true;
+    private bool showDiagram = true;
+    private bool showDownloadMenu;
+    private string viewMode = TypesView;
+    private string layoutName = "fcose";
+    private string grouping = NamespaceGrouping;
+    private bool showMembers;
+    private bool showFunctions;
+    private readonly HashSet<string> hiddenEdgeKinds = new();
+    private readonly HashSet<string> hiddenNodeKinds = new();
+    private string searchText = string.Empty;
+    private bool matchCase;
+    private int searchMatches;
 
-    private DiagramRenderMode renderModeSetting = DiagramRenderMode.VizGraph;
+    // Selection
+    private string? selectedTypeId;
+    private string? selectedNamespace;
+    private string? selectedFile;
+    private string? selectedMethodId; // a function node (with Functions on); its type is selectedTypeId
+    private bool isIsolated;
 
     #endregion
 
@@ -153,177 +392,604 @@
     {
         if (firstRender)
         {
+            selfReference = DotNetObjectReference.Create(this);
             await jsRuntime.InvokeVoidAsync("InitializeMonaco", "csharpEditor", sourceCode);
+            await jsRuntime.InvokeVoidAsync("CodeGraphView.init", "graphContainer", "graphvizContainer", selfReference);
+            await jsRuntime.InvokeVoidAsync("initSplitter", "sourceSplitter", "sourcePane", 200);
+
+            // Start with a diagram of the sample code rather than an empty canvas.
+            await GenerateAsync();
         }
     }
 
     #endregion
 
-    public enum DiagramRenderMode
+
+    #region Generating
+
+    private Task GenerateAsync() => generateCoreAsync(pickViewBySize: false);
+
+    private async Task generateCoreAsync(bool pickViewBySize)
     {
-        VizGraph,
-        Interactive2D,
-        Interactive3D
-    }
+        // A new run replaces one that is still going.
+        generationCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        generationCts = cts;
 
-
-
-    #region Methods
-
-    private async Task draw()
-    {
-        isLoading = true;
-        loadingMessage = "Generating diagram...";
+        isBusy = true;
+        isLayingOut = false;
+        errorMessage = string.Empty;
+        statusMessage = "Reading source...";
         StateHasChanged();
-        await Task.Yield();
 
         try
         {
-            sourceCode = await jsRuntime.InvokeAsync<string>("GetMonacoContent");
+            sourceCode = await jsRuntime.InvokeAsync<string>("GetMonacoContent", cts.Token);
 
-            if (renderModeSetting == DiagramRenderMode.VizGraph)
+            // The editor holds one or more files separated by marker lines; each is parsed on its own.
+            var progress = new StatusProgress(message =>
             {
-                string dot = DiagramGenerator.GenerateCodeDiagram(sourceCode, diagramSettings);
-                codeGraph = await jsRuntime.InvokeAsync<string>("renderDotToSvg", dot);
-
+                statusMessage = message;
                 StateHasChanged();
-                await Task.Yield();
-                await jsRuntime.InvokeVoidAsync("initDiagramPanZoom");
-            }
-            else if (renderModeSetting == DiagramRenderMode.Interactive2D)
+            });
+            var graph = await CodeAnalyzer.AnalyzeAsync(SourceBundle.Split(sourceCode), diagramSettings, progress, cts.Token);
+
+            if (pickViewBySize)
             {
-                cytoscapeJson = DiagramGenerator.GenerateCytoscapeJson(sourceCode, diagramSettings);
+                // A big project is easier to take in from the namespace overview first.
+                viewMode = graph.Types.Count(t => !t.IsExternal) > LargeProjectTypeCount ? NamespacesView : TypesView;
+            }
+
+            var data = GraphData.FromGraph(graph);
+            cts.Token.ThrowIfCancellationRequested();
+
+            // The layout can't be stopped half way, so from here on there's no Cancel: the new diagram is drawn,
+            // and the graph below always matches what's drawn.
+            statusMessage = $"Laying out {graph.Types.Count} types...";
+            isLayingOut = true;
+            StateHasChanged();
+            await jsRuntime.InvokeVoidAsync("CodeGraphView.render", data, CurrentViewOptions());
+
+            currentGraph = graph;
+            presentKinds = data.Nodes.Select(n => n.Kind).Concat(data.Edges.Select(e => e.Kind)).ToHashSet();
+            selectedTypeId = null;
+            selectedNamespace = null;
+            selectedFile = null;
+            selectedMethodId = null;
+            isIsolated = false;
+            await applySearchAsync();
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Cancelled by the user, or replaced by a newer run.
+        }
+        catch (Exception ex)
+        {
+            if (cts == generationCts)
+            {
+                // A JSException message also carries the JS stack trace; the first line is the message.
+                errorMessage = ex.Message.Split('\n')[0];
             }
         }
         finally
         {
-            isLoading = false;
-            loadingMessage = string.Empty;
+            if (cts == generationCts)
+            {
+                generationCts = null;
+                isBusy = false;
+                isLayingOut = false;
+                statusMessage = string.Empty;
+            }
+            cts.Dispose();
+
+            // Not only called from event handlers (which re-render on their own), but also from
+            // OnAfterRenderAsync and JS, which don't.
+            StateHasChanged();
         }
     }
 
-    private async Task resetView()
+    // Regenerates after a short pause, so several quick changes (e.g. ticking files) lead to one run.
+    private async Task scheduleGenerateAsync()
     {
-        await jsRuntime.InvokeVoidAsync("resetDiagramView");
+        debounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        debounceCts = cts;
+
+        try
+        {
+            await Task.Delay(500, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        await GenerateAsync();
     }
 
-    private async Task onZipUpload(InputFileChangeEventArgs e)
+    private void cancelGeneration()
+    {
+        generationCts?.Cancel();
+    }
+
+    private object CurrentViewOptions() => new
+    {
+        view = viewMode,
+        layout = layoutName,
+        groupBy = grouping,
+        showMembers,
+        showFunctions,
+        hiddenEdgeKinds = hiddenEdgeKinds.ToArray(),
+        hiddenNodeKinds = hiddenNodeKinds.ToArray()
+    };
+
+    private sealed class StatusProgress : IProgress<string>
+    {
+        private readonly Action<string> report;
+        public StatusProgress(Action<string> report) => this.report = report;
+        public void Report(string value) => report(value);
+    }
+
+    #endregion
+
+
+    #region View Options
+
+    private async Task setViewAsync(string view)
+    {
+        if (viewMode == view)
+            return;
+
+        viewMode = view;
+        await clearSelectionStateAsync();
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.update", CurrentViewOptions());
+        await applySearchAsync();
+    }
+
+    // A new layout shows the whole diagram again (relayout ends a focus).
+    private async Task setLayoutAsync(string layout)
+    {
+        layoutName = layout;
+        isIsolated = false;
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.relayout", layoutName);
+        await applySearchAsync();
+    }
+
+    private async Task toggleEdgeKindAsync(string kind)
+    {
+        if (!hiddenEdgeKinds.Remove(kind))
+            hiddenEdgeKinds.Add(kind);
+        await applyFiltersAsync();
+    }
+
+    private async Task toggleNodeKindsAsync(string[] kinds)
+    {
+        bool hide = !kinds.All(hiddenNodeKinds.Contains);
+        foreach (var kind in kinds)
+        {
+            if (hide)
+                hiddenNodeKinds.Add(kind);
+            else
+                hiddenNodeKinds.Remove(kind);
+        }
+        await applyFiltersAsync();
+    }
+
+    private async Task applyFiltersAsync()
+    {
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.setFilters", hiddenEdgeKinds.ToArray(), hiddenNodeKinds.ToArray());
+
+        // The namespace overview is built again for a filter change, which ends a focus.
+        if (viewMode == NamespacesView)
+            isIsolated = false;
+        await applySearchAsync();
+    }
+
+    private async Task toggleGroupingAsync(string toggled)
+    {
+        grouping = grouping == toggled ? NoGrouping : toggled;
+        await clearSelectionStateAsync();
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.update", CurrentViewOptions());
+        await applySearchAsync();
+    }
+
+    private async Task toggleMembersAsync()
+    {
+        showMembers = !showMembers;
+        await clearSelectionStateAsync();
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.update", CurrentViewOptions());
+        await applySearchAsync();
+    }
+
+    private async Task toggleFunctionsAsync()
+    {
+        showFunctions = !showFunctions;
+        await clearSelectionStateAsync();
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.update", CurrentViewOptions());
+        await applySearchAsync();
+    }
+
+    // These two change what is analyzed, so the diagram is generated again.
+    private async Task toggleVariablesAsync()
+    {
+        diagramSettings.ShowVariables = !diagramSettings.ShowVariables;
+        await GenerateAsync();
+    }
+
+    private async Task toggleFrameworkTypesAsync()
+    {
+        diagramSettings.OnlyShowMyCode = !diagramSettings.OnlyShowMyCode;
+        await GenerateAsync();
+    }
+
+    private async Task onSearchChanged() => await applySearchAsync();
+
+    private async Task applySearchAsync()
+    {
+        searchMatches = await jsRuntime.InvokeAsync<int>("CodeGraphView.search", searchText, matchCase);
+    }
+
+    private async Task toggleMatchCaseAsync()
+    {
+        matchCase = !matchCase;
+        await applySearchAsync();
+    }
+
+    private async Task onSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await jsRuntime.InvokeVoidAsync("CodeGraphView.zoomToSearch");
+    }
+
+    private async Task fitAsync()
+    {
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.fit");
+    }
+
+    private async Task zoomAsync(double factor)
+    {
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.zoomBy", factor);
+    }
+
+    private async Task exportPngAsync()
+    {
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.exportPng", "code-diagram.png");
+    }
+
+    private async Task downloadPngFromMenuAsync()
+    {
+        showDownloadMenu = false;
+        await exportPngAsync();
+    }
+
+    private async Task downloadDotFromMenuAsync()
+    {
+        showDownloadMenu = false;
+        await exportDotAsync();
+    }
+
+    private static string ToggleTitle(string option, bool isOn) => $"{option}: {(isOn ? "on" : "off")}";
+
+    private async Task exportDotAsync()
+    {
+        if (currentGraph == null)
+            return;
+
+        await jsRuntime.InvokeVoidAsync("BlazorDownloadFile", "code-diagram.dot", "text/vnd.graphviz", DotRenderer.Render(currentGraph));
+    }
+
+    #endregion
+
+
+    #region Selection
+
+    [JSInvokable]
+    public Task OnGraphSelection(string? kind, string? id) => InvokeAsync(async () =>
+    {
+        // A function's id is its type's id and its name, on two lines.
+        var method = kind == "method" ? id!.Split('\n', 2) : null;
+        selectedTypeId = kind == "type" ? id : method?[0];
+        selectedMethodId = method != null ? id : null;
+        selectedNamespace = kind == "namespace" ? id : null;
+        selectedFile = kind == "file" ? id : null;
+        StateHasChanged();
+
+        if (method != null && FindFunction(method[0], method[1]) is { } location)
+        {
+            showSource = true;
+            StateHasChanged();
+            await jsRuntime.InvokeVoidAsync("RevealMonacoFile", location.FilePath, location.Line);
+        }
+    });
+
+    // Where a function node's function is. One with no place of its own (a script's top-level code, or a
+    // JavaScript class's constructor that isn't written out) opens its type's.
+    private SourceLocation? FindFunction(string typeId, string name)
+    {
+        var type = currentGraph?.Types.FirstOrDefault(t => t.Id == typeId);
+        if (type == null)
+            return null;
+
+        if (type.FunctionLocations.TryGetValue(name, out var location))
+            return location;
+        return string.IsNullOrEmpty(type.FilePath) ? null : new SourceLocation(type.FilePath, type.Line);
+    }
+
+    [JSInvokable]
+    public Task OnNamespaceOpened(string ns) => InvokeAsync(async () =>
+    {
+        await openNamespaceAsync(ns);
+        StateHasChanged();
+    });
+
+    private async Task selectTypeAsync(string id)
+    {
+        // The namespace overview has no box for a type: it's shown in the types view.
+        await showTypesViewAsync(grouping);
+
+        selectedTypeId = id;
+        selectedNamespace = null;
+        selectedFile = null;
+        selectedMethodId = null;
+
+        // While focused, clicking through to a related type moves the focus along with it.
+        if (!isIsolated || !await jsRuntime.InvokeAsync<bool>("CodeGraphView.isolate", "type", id, 1))
+            await jsRuntime.InvokeAsync<bool>("CodeGraphView.select", "type", id, true);
+        await applySearchAsync();
+    }
+
+    // A namespace's types are shown in its box, so the types view is grouped by namespace for it.
+    private async Task openNamespaceAsync(string ns)
+    {
+        await showTypesViewAsync(NamespaceGrouping);
+
+        selectedTypeId = null;
+        selectedFile = null;
+        selectedMethodId = null;
+        selectedNamespace = ns;
+        await jsRuntime.InvokeAsync<bool>("CodeGraphView.select", "namespace", ns, true);
+        await applySearchAsync();
+    }
+
+    private async Task showTypesViewAsync(string withGrouping)
+    {
+        if (viewMode == TypesView && grouping == withGrouping)
+            return;
+
+        viewMode = TypesView;
+        grouping = withGrouping;
+        isIsolated = false;
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.update", CurrentViewOptions());
+    }
+
+    private async Task isolateAsync(int depth)
+    {
+        var (kind, id) = selectedMethodId != null ? ("method", selectedMethodId)
+            : selectedTypeId != null ? ("type", selectedTypeId)
+            : selectedFile != null ? ("file", selectedFile)
+            : ("namespace", selectedNamespace);
+        if (id == null)
+            return;
+
+        // Something the diagram doesn't show leaves it as it was, focused or not.
+        isIsolated |= await jsRuntime.InvokeAsync<bool>("CodeGraphView.isolate", kind, id, depth);
+        await applySearchAsync();
+    }
+
+    private async Task showAllAsync()
+    {
+        isIsolated = false;
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.showAll");
+        await applySearchAsync();
+    }
+
+    // Closing the details panel: the selection goes, but a focus stays (the stats line offers "show all").
+    private async Task clearSelectionAsync()
+    {
+        clearSelection();
+        await jsRuntime.InvokeVoidAsync("CodeGraphView.clearSelection");
+    }
+
+    // For changes that build the diagram again, which ends a focus too.
+    private Task clearSelectionStateAsync()
+    {
+        clearSelection();
+        isIsolated = false;
+        return Task.CompletedTask;
+    }
+
+    private void clearSelection()
+    {
+        selectedTypeId = null;
+        selectedNamespace = null;
+        selectedFile = null;
+        selectedMethodId = null;
+    }
+
+    private async Task goToSourceAsync(TypeNode type)
+    {
+        showSource = true;
+        StateHasChanged();
+        await jsRuntime.InvokeVoidAsync("RevealMonacoFile", type.FilePath, type.Line);
+    }
+
+    private async Task goToMemberAsync(MemberInfo member)
+    {
+        showSource = true;
+        StateHasChanged();
+        await jsRuntime.InvokeVoidAsync("RevealMonacoFile", member.FilePath, member.Line);
+    }
+
+    // From the Project panel or the details panel: shows the file in the editor and, when the diagram is
+    // grouped by file, selects the file's box.
+    private async Task revealFile(string path)
+    {
+        showSource = true;
+        StateHasChanged();
+        await jsRuntime.InvokeVoidAsync("RevealMonacoFile", path, null);
+
+        if (grouping == FileGrouping && viewMode == TypesView && currentGraph != null && path != selectedFile
+            && await jsRuntime.InvokeAsync<bool>("CodeGraphView.select", "file", path, true))
+        {
+            selectedTypeId = null;
+            selectedNamespace = null;
+            selectedFile = path;
+            selectedMethodId = null;
+        }
+    }
+
+    #endregion
+
+
+    #region Files
+
+    private async Task onArchiveUpload(InputFileChangeEventArgs e)
     {
         var file = e.File;
         if (file == null)
             return;
 
-        if (file.Size > MaxZipSize)
+        // The file picker lists all files (see FileTreePanel), so the type is checked here.
+        if (!ProjectArchive.IsSupported(file.Name))
         {
-            await jsRuntime.InvokeVoidAsync("alert", "File is too large. Maximum allowed size is 2GB.");
+            errorMessage = $"\"{file.Name}\" isn't an archive the app can read. Use a .zip, .7z, .rar or .tar.gz of the project folder.";
             return;
         }
 
-        isLoading = true;
-        loadingMessage = "Extracting zip...";
+        if (file.Size > MaxArchiveSize)
+        {
+            errorMessage = "The archive is too large. The maximum size is 512 MB; leaving out bin and obj folders usually helps.";
+            return;
+        }
+
+        await loadProjectAsync("Reading the archive...", "Could not read the archive", async _ =>
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: MaxArchiveSize);
+            using var ms = new MemoryStream((int)file.Size);
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            return await ProjectArchive.ReadAsync(ms);
+        });
+    }
+
+    private async Task onGitHubLoad(string url)
+    {
+        if (!GitHubRepository.TryParse(url, out var location) || location == null)
+        {
+            errorMessage = $"\"{url}\" isn't a GitHub repository address. Use one like https://github.com/owner/repository.";
+            return;
+        }
+
+        await loadProjectAsync("Connecting to GitHub...", "Could not load the repository", progress =>
+            GitHubRepository.ReadAsync(httpClient, location, progress));
+    }
+
+    // Shows the files from an archive or a repository in the file tree and the editor, then generates the diagram.
+    private async Task loadProjectAsync(string message, string failureMessage, Func<IProgress<string>, Task<List<SourceFile>>> readFiles)
+    {
+        isUploading = true;
+        loadingMessage = message;
+        errorMessage = string.Empty;
         StateHasChanged();
         await Task.Yield();
 
         try
         {
-            using var stream = file.OpenReadStream(maxAllowedSize: MaxZipSize);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-            ms.Position = 0;
-
-            zipFileEntries.Clear();
-
-            using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read, leaveOpen: false))
+            var progress = new StatusProgress(text =>
             {
-                var csEntries = new List<(string FullName, string Name, string Content, bool IsIgnored)>();
-                var razorEntries = new List<(string FullName, string Name, string Content, bool IsIgnored)>();
+                loadingMessage = text;
+                StateHasChanged();
+            });
+            var files = (await readFiles(progress))
+                .Where(f => !string.IsNullOrWhiteSpace(f.Content))
+                .Select(f => (File: f, IsIgnored: ProjectArchive.IsBuildOutputOrLibrary(f.Path)))
+                .ToList();
 
-                foreach (var entry in archive.Entries)
+            // Project files are only read for their root namespace, which Razor components use.
+            var razorContext = RazorProjectContext.Build(files.Where(f => !f.IsIgnored).Select(f => f.File));
+
+            // A new list (rather than clearing the old one) tells the file tree to rebuild.
+            var entries = new List<ProjectFileEntry>();
+            foreach (var (sourceFile, isIgnored) in files)
+            {
+                string content;
+                if (RazorExtractor.IsRazorFile(sourceFile.Path))
+                    content = RazorExtractor.Extract(sourceFile.Content, sourceFile.Path, razorContext);
+                else if (sourceFile.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || JavaScriptAnalyzer.IsJavaScriptFile(sourceFile.Path))
+                    content = sourceFile.Content;
+                else
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(content))
+                    continue;
+
+                entries.Add(new ProjectFileEntry
                 {
-                    if (entry.FullName.EndsWith("/"))
-                        continue;
-
-                    var normalizedPath = entry.FullName.Replace('\\', '/');
-                    bool isIgnoredFolder = normalizedPath.Split('/').Any(segment =>
-                        segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-                        segment.Equals("obj", StringComparison.OrdinalIgnoreCase));
-
-                    bool isCsFile = entry.FullName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
-                    bool isRazorFile = entry.FullName.EndsWith(".razor", StringComparison.OrdinalIgnoreCase);
-
-                    if (!isCsFile && !isRazorFile)
-                        continue;
-
-                    using var entryStream = entry.Open();
-                    using var reader = new StreamReader(entryStream);
-                    var rawContent = await reader.ReadToEndAsync();
-
-                    if (string.IsNullOrWhiteSpace(rawContent))
-                        continue;
-
-                    var item = (entry.FullName, entry.Name, Content: rawContent, IsIgnored: isIgnoredFolder);
-
-                    if (isCsFile)
-                        csEntries.Add(item);
-                    else
-                        razorEntries.Add(item);
-                }
-
-                // Pass 1: Add .cs files and collect existing class names
-                var allCsCode = string.Concat(csEntries.Select(e => e.Content));
-                var existingClassNames = DiagramGenerator.CollectClassNames(allCsCode);
-
-                foreach (var cs in csEntries)
-                {
-                    zipFileEntries.Add(new ZipFileEntry
-                    {
-                        FullPath = cs.FullName,
-                        Content = cs.Content,
-                        IsSelected = !cs.IsIgnored
-                    });
-                }
-
-                // Pass 2: Add .razor files with markup-referenced members as stubs
-                foreach (var razor in razorEntries)
-                {
-                    var content = DiagramGenerator.ExtractRazorCodeBlocks(razor.Content, razor.Name, existingClassNames);
-
-                    if (string.IsNullOrWhiteSpace(content))
-                        continue;
-
-                    zipFileEntries.Add(new ZipFileEntry
-                    {
-                        FullPath = razor.FullName,
-                        Content = content,
-                        IsSelected = !razor.IsIgnored
-                    });
-                }
+                    FullPath = sourceFile.Path,
+                    Content = content,
+                    IsSelected = !isIgnored
+                });
             }
 
+            // The current project stays, rather than being replaced by an empty one.
+            if (entries.Count == 0)
+            {
+                errorMessage = "There's no code in the project's files.";
+                return;
+            }
+
+            projectFiles = entries;
             await rebuildSourceFromSelection();
+        }
+        catch (InvalidDataException ex)
+        {
+            // ProjectArchive's and GitHubRepository's messages are written for the user.
+            errorMessage = ex.Message;
+            return;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"{failureMessage}: {ex.Message}";
+            return;
         }
         finally
         {
-            isLoading = false;
-            loadingMessage = string.Empty;
+            isUploading = false;
         }
+
+        await generateCoreAsync(pickViewBySize: true);
     }
 
     private async Task onSelectionChanged()
     {
         await rebuildSourceFromSelection();
+        await scheduleGenerateAsync();
     }
 
     private async Task rebuildSourceFromSelection()
     {
-        sourceCode = string.Concat(zipFileEntries.Where(f => f.IsSelected).Select(f => f.Content));
+        sourceCode = SourceBundle.Join(projectFiles.Where(f => f.IsSelected).Select(f => new SourceFile(f.FullPath, f.Content)));
         await jsRuntime.InvokeVoidAsync("SetMonacoContent", sourceCode);
     }
 
-    public void Dispose()
-    {
-        _ = jsRuntime.InvokeVoidAsync("DisposeMonaco");
-    }
-
     #endregion
+
+
+    public async ValueTask DisposeAsync()
+    {
+        generationCts?.Cancel();
+        debounceCts?.Cancel();
+
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("CodeGraphView.dispose");
+            await jsRuntime.InvokeVoidAsync("DisposeMonaco");
+        }
+        catch (JSDisconnectedException)
+        {
+            // The page is going away; nothing to clean up on the JS side.
+        }
+
+        selfReference?.Dispose();
+    }
 }

@@ -1,0 +1,40 @@
+.dropdown-select {
+    position: relative;
+    display: inline-flex;
+}
+
+/* Looks like the other toolbar buttons; the list itself uses the shared .menu styles in app.css. */
+.dropdown-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: 2rem;
+    padding: 0 0.5rem 0 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+    .dropdown-button:hover,
+    .dropdown-button.open {
+        background-color: var(--hover-strong);
+    }
+
+    .dropdown-button ::deep .dropdown-icon,
+    .dropdown-button ::deep .dropdown-chevron {
+        color: var(--text-muted);
+    }
+
+    .dropdown-button ::deep .dropdown-chevron {
+        margin-left: 0.1rem;
+    }
+
+/* Opens under the button, lined up with its left edge. */
+.dropdown-select .menu {
+    left: 0;
+    right: auto;
+    min-width: max(100%, 16rem);
+}

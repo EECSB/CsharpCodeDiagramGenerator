@@ -1,22 +1,4 @@
-﻿function applyStyleForElement(data) {
-    document.getElementById(data.id).style[data.attrib] = data.value;
-}
-
-function applyStyleForElementClass(data) {
-    for (let classReference of document.getElementsByClassName(data.className)) {
-        classReference.style[data.attrib] = data.value;
-    }   
-}
-
-function setInnerHTMLForElement(data) {
-    document.getElementById(data.id).innerHTML = data.value;
-}
-
-function disableElement(data) {
-    document.getElementById(data.id).disabled = data.value;
-}
-
-function BlazorDownloadFile(filename, contentType, content) {
+﻿function BlazorDownloadFile(filename, contentType, content) {
     // Create the URL
     const file = new File([content], filename, { type: contentType });
     const exportUrl = URL.createObjectURL(file);
@@ -28,16 +10,9 @@ function BlazorDownloadFile(filename, contentType, content) {
     a.download = filename;
     a.target = "_self";
     a.click();
+    a.remove();
 
     // We don't need to keep the object URL, let's release the memory
     // On older versions of Safari, it seems you need to comment this line...
     URL.revokeObjectURL(exportUrl);
-}
-
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(function () {
-        //console.log('Text copied to clipboard');
-    }).catch(function (err) {
-        console.error('Could not copy text: ', err);
-    });
 }

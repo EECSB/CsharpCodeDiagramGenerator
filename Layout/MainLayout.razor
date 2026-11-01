@@ -1,28 +1,17 @@
 ﻿@inherits LayoutComponentBase
 <div class="page">
-    <main>
-        <div class="top-row px-4" style="justify-content: space-between; background-color: #f25958;">
-            <div style="margin-left: 2em;">
-                <h1 style="margin: 0; font-size: 1.8em; font-weight: bold; color: white;">
-                    C# Code Diagram Generator
-                </h1>
-            </div>
+    <header class="app-header">
+        <h1><Icon Name="network" Size="22" />C# Code Diagram Generator</h1>
+        <button class="about-button" @onclick="() => showAbout = !showAbout"><Icon Name="info" />About</button>
+    </header>
 
-            <div>
-                <div @onclick="() => { aboutComponent.Show = !aboutComponent.Show; showShare = false; }" style="font-size: 1.3em; color: white; font-weight: bold; cursor: pointer; margin-right: 4em;">
-                    About
-                </div>
-            </div>
-        </div>
-
-        <article class="content px-4">
-            <Main></Main>
-            <About @ref="aboutComponent" />
-        </article>
+    <main class="app-main">
+        <Main></Main>
     </main>
+
+    <About @bind-Show="showAbout" />
 </div>
 
 @code {
-    private About aboutComponent;
-    private bool showShare = false;
+    private bool showAbout;
 }

@@ -1,0 +1,275 @@
+@if (selectedType != null)
+{
+    var type = selectedType;
+    <aside class="details" aria-label="Selected type">
+        <div class="details-header">
+            <span class="kind-badge" style="@KindStyle(type.Kind)">@KindName(type)</span>
+            <button class="icon-button" @onclick="OnClose" title="Close" aria-label="Close details"><Icon Name="x" /></button>
+        </div>
+        <h2 class="details-title">@type.Name</h2>
+        <div class="details-meta">
+            <span>@(string.IsNullOrEmpty(type.Namespace) ? (type.IsExternal ? "Framework or library type" : "Global namespace") : type.Namespace)</span>
+            @if (!type.IsExternal && !string.IsNullOrEmpty(type.FilePath))
+            {
+                <button class="btn btn-link btn-sm p-0 source-link" @onclick="() => OnGoToSource.InvokeAsync(type)" title="Show the declaration in the editor">
+                    <Icon Name="code" Size="14" />@FileName(type.FilePath):@(type.Line + 1)
+                </button>
+            }
+        </div>
+
+        <div class="details-actions">
+            @if (IsIsolated)
+            {
+                <button class="btn btn-sm btn-outline-secondary action-button" @onclick="OnShowAll"><Icon Name="expand" Size="14" />Show all</button>
+                <button class="btn btn-sm btn-outline-secondary action-button" @onclick="() => OnIsolate.InvokeAsync(2)" title="Also show the neighbours' neighbours"><Icon Name="focus" Size="14" />2 levels</button>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-outline-primary action-button" @onclick="() => OnIsolate.InvokeAsync(1)" title="Show only this type and the types it's directly related to"><Icon Name="focus" Size="14" />Focus</button>
+                <button class="btn btn-sm btn-outline-secondary action-button" @onclick="() => OnIsolate.InvokeAsync(2)" title="Also show the neighbours' neighbours"><Icon Name="focus" Size="14" />Focus 2 levels</button>
+            }
+        </div>
+
+        @if (type.Members.Count > 0)
+        {
+            <section>
+                <h3>Members <span class="count">@type.Members.Count</span></h3>
+                <ul class="member-list">
+                    @foreach (var member in type.Members.Where(m => m.Kind != MemberKind.Method).Concat(type.Members.Where(m => m.Kind == MemberKind.Method)))
+                    {
+                        @if (string.IsNullOrEmpty(member.FilePath))
+                        {
+                            <li>@member.Display</li>
+                        }
+                        else
+                        {
+                            <li><button class="member-link" @onclick="() => OnGoToMember.InvokeAsync(member)" title="@($"Show in the editor ({FileName(member.FilePath)}:{member.Line + 1})")">@member.Display</button></li>
+                        }
+                    }
+                </ul>
+            </section>
+        }
+
+        @RenderRelations("Depends on", outgoing, incoming: false)
+        @RenderRelations("Used by", incoming, incoming: true)
+
+        @if (internalCalls.Count > 0)
+        {
+            <section>
+                <details>
+                    <summary><h3>Internal calls <span class="count">@internalCalls.Count</span></h3></summary>
+                    <ul class="call-list">
+                        @foreach (var call in internalCalls)
+                        {
+                            <li>@call</li>
+                        }
+                    </ul>
+                </details>
+            </section>
+        }
+    </aside>
+}
+else if (SelectedFile != null)
+{
+    var types = Graph?.Types.Where(t => t.FilePath == SelectedFile).OrderBy(t => t.Line).ToList() ?? new();
+    <aside class="details" aria-label="Selected file">
+        <div class="details-header">
+            <span class="kind-badge" style="@KindStyle(null)">file</span>
+            <button class="icon-button" @onclick="OnClose" title="Close" aria-label="Close details"><Icon Name="x" /></button>
+        </div>
+        <h2 class="details-title">@FileName(SelectedFile)</h2>
+        <div class="details-meta">
+            <span class="file-path">@SelectedFile</span>
+            <button class="btn btn-link btn-sm p-0 source-link" @onclick="() => OnGoToFile.InvokeAsync(SelectedFile)" title="Show the file in the editor">
+                <Icon Name="code" Size="14" />Show in editor
+            </button>
+        </div>
+
+        <div class="details-actions">
+            @if (IsIsolated)
+            {
+                <button class="btn btn-sm btn-outline-secondary action-button" @onclick="OnShowAll"><Icon Name="expand" Size="14" />Show all</button>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-outline-primary action-button" @onclick="() => OnIsolate.InvokeAsync(1)" title="Show only this file and the types it's directly related to"><Icon Name="focus" Size="14" />Focus</button>
+            }
+        </div>
+
+        <section>
+            <h3>Types <span class="count">@types.Count</span></h3>
+            <ul class="relation-list">
+                @foreach (var t in types)
+                {
+                    <li>
+                        <span class="kind-dot" style="@KindStyle(t.Kind)"></span>
+                        <button class="btn btn-link btn-sm p-0 type-link" @onclick="() => OnSelectType.InvokeAsync(t.Id)">@t.Name</button>
+                    </li>
+                }
+            </ul>
+        </section>
+    </aside>
+}
+else if (SelectedNamespace != null)
+{
+    var types = Graph?.Types.Where(t => NamespaceKey(t) == SelectedNamespace).OrderBy(t => t.Name).ToList() ?? new();
+    <aside class="details" aria-label="Selected namespace">
+        <div class="details-header">
+            <span class="kind-badge" style="@KindStyle(null)">namespace</span>
+            <button class="icon-button" @onclick="OnClose" title="Close" aria-label="Close details"><Icon Name="x" /></button>
+        </div>
+        <h2 class="details-title">@SelectedNamespace</h2>
+        <div class="details-meta">@types.Count type@(types.Count == 1 ? "" : "s")</div>
+
+        <div class="details-actions">
+            @if (IsNamespaceView)
+            {
+                <button class="btn btn-sm btn-outline-primary action-button" @onclick="() => OnOpenNamespace.InvokeAsync(SelectedNamespace)"><Icon Name="boxes" Size="14" />Show its types</button>
+            }
+            else if (IsIsolated)
+            {
+                <button class="btn btn-sm btn-outline-secondary action-button" @onclick="OnShowAll"><Icon Name="expand" Size="14" />Show all</button>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-outline-primary action-button" @onclick="() => OnIsolate.InvokeAsync(1)" title="Show only this namespace and the types it's directly related to"><Icon Name="focus" Size="14" />Focus</button>
+            }
+        </div>
+
+        <section>
+            <h3>Types</h3>
+            <ul class="relation-list">
+                @foreach (var t in types)
+                {
+                    <li>
+                        <span class="kind-dot" style="@KindStyle(t.Kind)"></span>
+                        <button class="btn btn-link btn-sm p-0 type-link" @onclick="() => OnSelectType.InvokeAsync(t.Id)">@t.Name</button>
+                    </li>
+                }
+            </ul>
+        </section>
+    </aside>
+}
+
+@code {
+    public const string GlobalNamespace = "(global namespace)";
+    public const string ExternalGroup = "Framework & libraries";
+
+    [Parameter] public CodeGraph? Graph { get; set; }
+    [Parameter] public string? SelectedTypeId { get; set; }
+    [Parameter] public string? SelectedNamespace { get; set; }
+    [Parameter] public string? SelectedFile { get; set; }
+    [Parameter] public bool IsIsolated { get; set; }
+    [Parameter] public bool IsNamespaceView { get; set; }
+
+    [Parameter] public EventCallback<string> OnSelectType { get; set; }
+    [Parameter] public EventCallback<string> OnOpenNamespace { get; set; }
+    [Parameter] public EventCallback<TypeNode> OnGoToSource { get; set; }
+    [Parameter] public EventCallback<MemberInfo> OnGoToMember { get; set; }
+    [Parameter] public EventCallback<string> OnGoToFile { get; set; }
+    [Parameter] public EventCallback<int> OnIsolate { get; set; }
+    [Parameter] public EventCallback OnShowAll { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private CodeGraph? indexedGraph;
+    private Dictionary<string, TypeNode> typesById = new();
+
+    private TypeNode? selectedType;
+    private List<GraphEdge> outgoing = new();
+    private List<GraphEdge> incoming = new();
+    private List<string> internalCalls = new();
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(indexedGraph, Graph))
+        {
+            indexedGraph = Graph;
+            typesById = Graph?.Types.ToDictionary(t => t.Id) ?? new();
+        }
+
+        selectedType = SelectedTypeId != null && typesById.TryGetValue(SelectedTypeId, out var type) ? type : null;
+
+        var edges = Graph?.Edges ?? new List<GraphEdge>();
+        outgoing = edges.Where(e => e.SourceId == SelectedTypeId && !e.IsSelfLoop).OrderBy(e => e.Kind).ToList();
+        incoming = edges.Where(e => e.TargetId == SelectedTypeId && !e.IsSelfLoop).OrderBy(e => e.Kind).ToList();
+        internalCalls = edges.Where(e => e.SourceId == SelectedTypeId && e.IsSelfLoop).SelectMany(e => e.Calls).Select(c => c.ToString()).ToList();
+    }
+
+    private RenderFragment RenderRelations(string title, List<GraphEdge> relations, bool incoming) => @<text>
+        @if (relations.Count > 0)
+        {
+            <section>
+                <h3>@title <span class="count">@relations.Count</span></h3>
+                <ul class="relation-list">
+                    @foreach (var edge in relations)
+                    {
+                        var other = typesById.GetValueOrDefault(incoming ? edge.SourceId : edge.TargetId);
+                        if (other == null)
+                            continue;
+
+                        <li>
+                            <span class="relation-kind" style="@EdgeStyle(edge.Kind)">@RelationName(edge.Kind, incoming)</span>
+                            <button class="btn btn-link btn-sm p-0 type-link" @onclick="() => OnSelectType.InvokeAsync(other.Id)">@other.Name</button>
+                            @if (edge.Kind == EdgeKind.Calls)
+                            {
+                                <details class="call-details">
+                                    <summary>@edge.Calls.Count call@(edge.Calls.Count == 1 ? "" : "s")</summary>
+                                    <ul class="call-list">
+                                        @foreach (var call in edge.Calls)
+                                        {
+                                            <li>@call</li>
+                                        }
+                                    </ul>
+                                </details>
+                            }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    </text>;
+
+    public static string NamespaceKey(TypeNode type) =>
+        type.IsExternal ? ExternalGroup : string.IsNullOrEmpty(type.Namespace) ? GlobalNamespace : type.Namespace;
+
+    private static string RelationName(EdgeKind kind, bool incoming) => (kind, incoming) switch
+    {
+        (EdgeKind.Inherits, false) => "inherits",
+        (EdgeKind.Inherits, true) => "inherited by",
+        (EdgeKind.Implements, false) => "implements",
+        (EdgeKind.Implements, true) => "implemented by",
+        (EdgeKind.Uses, false) => "uses",
+        (EdgeKind.Uses, true) => "used by",
+        (EdgeKind.Calls, false) => "calls",
+        (EdgeKind.Calls, true) => "called by",
+        (EdgeKind.Renders, false) => "renders",
+        (EdgeKind.Renders, true) => "rendered by",
+        _ => kind.ToString()
+    };
+
+    private static string KindName(TypeNode type) => type.Kind switch
+    {
+        NodeKind.RecordStruct => "record struct",
+        NodeKind.External => "framework type",
+        NodeKind.Module => "js module",
+        NodeKind.Class when type.IsStatic => "static class",
+        NodeKind.Class when type.IsAbstract => "abstract class",
+        _ => type.Kind.ToString().ToLowerInvariant()
+    };
+
+    // Matches the --kind-* colors in app.css, which the diagram uses too.
+    private static string KindStyle(NodeKind? kind)
+    {
+        var name = kind switch
+        {
+            null => "namespace",
+            NodeKind.RecordStruct => "record",
+            _ => kind.Value.ToString().ToLowerInvariant()
+        };
+        return $"--c: var(--kind-{name}); --cf: var(--kind-{name}-fill);";
+    }
+
+    private static string EdgeStyle(EdgeKind kind) => $"--c: var(--edge-{kind.ToString().ToLowerInvariant()});";
+
+    private static string FileName(string path) => path.Substring(path.Replace('\\', '/').LastIndexOf('/') + 1);
+}
